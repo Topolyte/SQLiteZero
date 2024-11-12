@@ -35,6 +35,108 @@ public struct SQLiteError: Error, CustomStringConvertible {
     }
 }
 
+public struct SQLiteRow: Sequence {
+    let values: [Any?]
+    let colNames: [String]
+    
+    public subscript(_ index: Int) -> Any? {
+        return values[index]
+    }
+    
+    public subscript(_ name: String) -> Any? {
+        guard let index = colNames.firstIndex(of: name) else {
+            return nil
+        }
+        return self[index]
+    }
+    
+    public func asInt64(_ index: Int) -> Int64? {
+        guard let value = self[index] else {
+            return nil
+        }
+
+        switch value {
+        case let v as Int64: return v
+        case let v as Double: return Int64(v)
+        case let v as String: return Int64(v)
+        default: return nil
+        }
+    }
+    
+    public func asInt64(_ name: String) -> Int64? {
+        if let index = colNames.firstIndex(of: name) {
+            return self.asInt64(index)
+        }
+        return nil
+    }
+
+    public func asDouble(_ index: Int) -> Double? {
+        guard let value = self[index] else {
+            return nil
+        }
+
+        switch value {
+        case let v as Double: return v
+        case let v as Int64: return Double(v)
+        case let v as String: return Double(v)
+        default: return nil
+        }
+    }
+    
+    public func asDouble(_ name: String) -> Double? {
+        if let index = colNames.firstIndex(of: name) {
+            return self.asDouble(index)
+        }
+        return nil
+    }
+
+    public func asString(_ index: Int) -> String? {
+        guard let value = self[index] else {
+            return nil
+        }
+        
+        switch value {
+        case let v as String: return v
+        case let v as Data: return String(data: v, encoding: .utf8)
+        default: return String(describing: value)
+        }
+    }
+    
+    public func asString(_ name: String) -> String? {
+        if let index = colNames.firstIndex(of: name) {
+            return self.asString(index)
+        }
+        return nil
+    }
+    
+    public func asData(_ index: Int) -> Data? {
+        guard let value = self[index] else {
+            return nil
+        }
+        
+        switch value {
+        case let v as Data: return v
+        case let v as String: return v.data(using: .utf8)
+        default: return nil
+        }
+    }
+    
+    public func asData(_ name: String) -> Data? {
+        if let index = colNames.firstIndex(of: name) {
+            return self.asData(index)
+        }
+        return nil
+    }
+        
+    public var count: Int {
+        return values.count
+    }
+    
+    public func makeIterator() -> some IteratorProtocol {
+        return zip(colNames, values).makeIterator()
+    }
+}
+
 let SQLITE_TRANSIENT: sqlite3_destructor_type = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 public class SQLiteStatement {
@@ -44,7 +146,6 @@ public class SQLiteStatement {
     public var colNames: [String] = []
 
     unowned var db: SQLite
-    let df = DateFormatter()
     let log: Logger
     var stmt: OpaquePointer! = nil
     
@@ -52,7 +153,6 @@ public class SQLiteStatement {
         self.db = db
         self.log = db.log
         self.sql = sql
-        df.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS'Z'"
         
         let rc = sqlite3_prepare_v2(db.db, sql, -1, &stmt, nil)
         if rc != SQLITE_OK {
@@ -71,20 +171,11 @@ public class SQLiteStatement {
         try execute()
     }
     
-    public func next() throws -> [Any?]? {
+    public func next() throws -> SQLiteRow? {
         guard hasRow else {
             return nil
         }
         let row = readRow()
-        try step()
-        return row
-    }
-
-    public func nextDict() throws -> [String: Any?]? {
-        guard hasRow else {
-            return nil
-        }
-        let row = readRowDict()
         try step()
         return row
     }
@@ -97,18 +188,17 @@ public class SQLiteStatement {
             case nil:
                 rc = sqlite3_bind_null(stmt, Int32(i + 1))
             case let v as UInt64:
-                if v > Int64.max {
+                if v <= Int64.max {
+                    rc = sqlite3_bind_int64(stmt, Int32(i + 1), Int64(v))
+                } else {
                     rc = sqlite3_bind_double(stmt, Int32(i + 1), Double(v))
                 }
-                rc = sqlite3_bind_int64(stmt, Int32(i + 1), Int64(v))
             case let v as any BinaryInteger:
                 rc = sqlite3_bind_int64(stmt, Int32(i + 1), Int64(v))
             case let v as any BinaryFloatingPoint:
                 rc = sqlite3_bind_double(stmt, Int32(i + 1), Double(v))
             case let v as String:
                 rc = sqlite3_bind_text(stmt, Int32(i + 1), v, -1, SQLITE_TRANSIENT)
-            case let v as Date:
-                rc = sqlite3_bind_text(stmt, Int32(i + 1), df.string(from: v), -1, SQLITE_TRANSIENT)
             case let v as Data:
                 v.withUnsafeBytes { buf in
                     rc = sqlite3_bind_blob(stmt, Int32(i + 1), buf.baseAddress, -1, SQLITE_TRANSIENT)
@@ -165,54 +255,33 @@ public class SQLiteStatement {
         return colNames
     }
 
-    func readRow() -> [Any?] {
+    func readRow() -> SQLiteRow {
         let count = sqlite3_column_count(stmt)
-        var row: [Any?] = []
+        var values: [Any?] = []
         for i in 0..<count {
             let type = sqlite3_column_type(stmt, i)
             switch type {
             case SQLITE_INTEGER:
-                row.append(Int64(sqlite3_column_int64(stmt, i)))
+                values.append(Int64(sqlite3_column_int64(stmt, i)))
             case SQLITE_FLOAT:
-                row.append(Double(sqlite3_column_double(stmt, i)))
+                values.append(Double(sqlite3_column_double(stmt, i)))
             case SQLITE_TEXT:
-                row.append(String(cString: sqlite3_column_text(stmt, i)))
+                values.append(String(cString: sqlite3_column_text(stmt, i)))
             case SQLITE_BLOB:
-                row.append(Data(bytes: sqlite3_column_blob(stmt, i),
+                values.append(Data(bytes: sqlite3_column_blob(stmt, i),
                                 count: Int(sqlite3_column_bytes(stmt, i))))
             default:
-                row.append(nil)
+                values.append(nil)
             }
         }
         
-        return row
-    }
-
-    func readRowDict() -> [String: Any?] {
-        var row: [String: Any?] = [:]
-        for (i, name) in colNames.enumerated() {
-            let type = sqlite3_column_type(stmt, Int32(i))
-            switch type {
-            case SQLITE_INTEGER:
-                row[name] = Int64(sqlite3_column_int64(stmt, Int32(i)))
-            case SQLITE_FLOAT:
-                row[name] = Double(sqlite3_column_double(stmt, Int32(i)))
-            case SQLITE_TEXT:
-                row[name] = String(cString: sqlite3_column_text(stmt, Int32(i)))
-            case SQLITE_BLOB:
-                row[name] = Data(bytes: sqlite3_column_blob(stmt, Int32(i)),
-                                 count: Int(sqlite3_column_bytes(stmt, Int32(i))))
-            default:
-                row[name] = nil
-            }
-        }
-        
-        return row
+        return SQLiteRow(values: values, colNames: colNames)
     }
 
     func step() throws {
         let rc = sqlite3_step(stmt)
         if rc == SQLITE_DONE {
+            self.hasRow = false
             return
         }
         if rc == SQLITE_ROW {
@@ -232,12 +301,15 @@ public class SQLiteStatement {
 
 public class SQLite {
     public static let defaultBusyTimeout = TimeInterval(1.0)
+    public static let defaultCacheSize = 100
     
     var db: OpaquePointer! = nil
     let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "", category: "General")
-    var statements = [String: SQLiteStatement]()
+    var statements: Cache<String, SQLiteStatement>
     
-    public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create]) throws {
+    public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create],
+                cacheSize: Int = SQLite.defaultCacheSize) throws
+    {
         let rc = sqlite3_open_v2(path, &db, flags.rawValue, nil)
         
         if rc != SQLITE_OK {
@@ -246,6 +318,7 @@ public class SQLite {
             throw SQLiteError(code: rc, message: message)
         }
         
+        statements = Cache(maxCount: cacheSize)
         busyTimeout(seconds: SQLite.defaultBusyTimeout)
     }
     
