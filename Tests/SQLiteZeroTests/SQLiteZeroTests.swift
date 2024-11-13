@@ -113,15 +113,18 @@ import Testing
 @Test func typeConversion() async throws {
     let db = try SQLite(":memory:")
     let select = try db.execute(
-        "SELECT 1 as i, 1.1 as d, 'one' as s, cast('abc' as blob) as h, null as u")
+        "SELECT 1 as i, 1.1 as d, '1' as s, cast('abc' as blob) as h, null as u")
     let row = try select.next()
     #expect(row != nil)
     
     guard let row = row else {
         return
     }
-    
+
+    #expect(row.asInt64("d") == Int64(1))
+    #expect(row.asInt64("s") == Int64(1))
     #expect(row.asDouble("i") == Double(1))
+    #expect(row.asDouble("s") == Double(1))
     #expect(row.asString("i") == "1")
     #expect(row.asString("d") == "1.1")
     #expect(row.asString("h") == "abc")
