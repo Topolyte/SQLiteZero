@@ -146,19 +146,14 @@ import Testing
 
 @Test func one() async throws {
     let db = try SQLite(":memory:")
-    let tooMany = try db.execute("select * from (values (1, 'noa'), (2, 'mia'))")
-    
-    #expect(throws: SQLiteError.self) {
-        _ = try tooMany.one()
-    }
     
     let noRows = try db.execute("select 1 where 1 = 2")
     #expect(throws: SQLiteError.self) {
-        _ = try noRows.one()
+        _ = try noRows.first()
     }
 
     let oneRow = try db.execute("select 1, 'noa'")
-    let row = try oneRow.one()
+    let row = try oneRow.first()
     #expect(row == SQLiteRow([.integer(1), .text("noa")]))
 }
 
@@ -175,10 +170,10 @@ import Testing
         (1, 'xan'),
         (2, 'mia');
     
-        select id, name from t order by id;
-    """)
+        select id, name from t where id = :id;
+    """, [":id": 1])
     
-    #expect(try last.next()?["name"] == "xan")
+    #expect(try last.first()["name"] == "xan")
 }
 
 

@@ -151,6 +151,13 @@ public class SQLiteStatement {
     let log: Logger
     var stmt: OpaquePointer! = nil
     
+    init(db: SQLite, stmt: OpaquePointer, sql: String) throws {
+        self.sql = sql
+        self.db = db
+        self.log = db.log
+        self.stmt = stmt
+    }
+    
     init(_ db: SQLite, _ sql: String) throws {
         self.db = db
         self.log = db.log
@@ -163,16 +170,14 @@ public class SQLiteStatement {
         }
     }
     
-    public func execute(_ args: [String: Any?]) throws {
-        try bind(args)
-        try execute()
+    public func execute(_ args: [String: Any?]? = nil) throws {
+        return try execute(SQLiteArgs(args))
     }
 
-    public func execute(_ args: [Any?]) throws {
-        try bind(args)
-        try execute()
+    public func execute(_ args: [Any?]? = nil) throws {
+        return try execute(SQLiteArgs(args))
     }
-    
+        
     public func next() throws -> SQLiteRow? {
         guard hasRow else {
             return nil
@@ -182,12 +187,9 @@ public class SQLiteStatement {
         return row
     }
     
-    public func one() throws -> SQLiteRow {
+    public func first() throws -> SQLiteRow {
         guard let row = try next() else {
             throw SQLiteError(code: Int32(SQLITE_ERROR), message: "No rows returned")
-        }
-        guard !hasRow else {
-            throw SQLiteError(code: Int32(SQLITE_ERROR), message: "More than one row returned")
         }
         return row
     }
@@ -249,6 +251,17 @@ public class SQLiteStatement {
         try bind(posArgs)
     }
     
+    func execute(_ params: SQLiteArgs) throws {
+        switch params {
+            case .none: break
+        case .named(let args):
+            try bind(args)
+        case .positional(let args):
+            try bind(args)
+        }
+        try execute()
+    }
+
     func execute() throws {
         self.changes = 0
         self.hasRow = false
@@ -319,6 +332,28 @@ public class SQLiteStatement {
     }
 }
 
+enum SQLiteArgs {
+    case none
+    case positional([Any?])
+    case named([String: Any?])
+    
+    init (_ params: [Any?]?) {
+        if let params = params {
+            self = .positional(params)
+        } else {
+            self = .none
+        }
+    }
+    
+    init (_ params: [String: Any?]?) {
+        if let params = params {
+            self = .named(params)
+        } else {
+            self = .none
+        }
+    }
+}
+
 public class SQLite {
     public static let defaultBusyTimeout = TimeInterval(1.0)
     public static let defaultCacheSize = 100
@@ -342,14 +377,22 @@ public class SQLite {
         busyTimeout(seconds: SQLite.defaultBusyTimeout)
     }
     
-    public func execute(_ sql: String, _ args: [Any?] = [Any?]()) throws -> SQLiteStatement {
-        let stmt = try getStatement(sql)
-        try stmt.execute(args)
-        return stmt
+    public func execute(_ sql: String) throws -> SQLiteStatement {
+        return try execute(sql, SQLiteArgs.none)
+    }
+    
+    public func execute(_ sql: String, _ args: [Any?]?) throws -> SQLiteStatement {
+        let sargs = SQLiteArgs(args)
+        return try execute(sql, sargs)
     }
 
-    public func execute(_ sql: String, _ args: [String: Any?]) throws -> SQLiteStatement {
-        let stmt = try getStatement(sql)
+    public func execute(_ sql: String, _ args: [String: Any?]?) throws -> SQLiteStatement {
+        let sargs = SQLiteArgs(args)
+        return try execute(sql, sargs)
+    }
+
+    func execute(_ sql: String, _ args: SQLiteArgs) throws -> SQLiteStatement {
+        let stmt = try prepare(sql)
         try stmt.execute(args)
         return stmt
     }
@@ -366,7 +409,7 @@ public class SQLite {
         sqlite3_busy_timeout(db, Int32(seconds * 1000.0))
     }
 
-    func getStatement(_ sql: String) throws -> SQLiteStatement {
+    func prepare(_ sql: String) throws -> SQLiteStatement {
         if let stmt = statements[sql] {
             let rc = sqlite3_clear_bindings(stmt.stmt)
             if rc != SQLITE_OK {
@@ -375,8 +418,46 @@ public class SQLite {
 
             return stmt
         }
-        let stmt = try SQLiteStatement(self, sql)
-        statements[sql] = stmt
+
+        var stmt: SQLiteStatement? = nil
+        
+        try sql.withCString {
+            var pStmt: OpaquePointer! = nil
+            var pCurrent: UnsafePointer<CChar>? = $0
+            var pNext: UnsafePointer<CChar>? = nil
+            
+            while true {
+                let rc = sqlite3_prepare_v2(db, pCurrent, -1, &pStmt, &pNext)
+                if rc != SQLITE_OK {
+                    let message = errorMessage(db, rc)
+                    sqlite3_finalize(pStmt)
+                    throw SQLiteError(code: rc, message: message)
+                }
+                
+                if pNext == nil || pNext![0] == 0 {
+                    stmt = try SQLiteStatement(db: self, stmt: pStmt, sql: String(cString: pCurrent!))
+                    break
+                } else {
+                    let rc = sqlite3_step(pStmt)
+                    if rc != SQLITE_DONE && rc != SQLITE_ROW {
+                        let message = errorMessage(db, rc)
+                        sqlite3_finalize(pStmt)
+                        throw SQLiteError(code: rc, message: message)
+                    }
+                    
+                    pCurrent = pNext
+                    pNext = nil
+                    sqlite3_finalize(pStmt)
+                    pStmt = nil
+                }
+            }
+        }
+        
+        guard let stmt = stmt else {
+            throw SQLiteError(code: SQLITE_ERROR, message: "BUG: stmt == nil")
+        }
+        
+        statements[stmt.sql] = stmt
         return stmt
     }
     
