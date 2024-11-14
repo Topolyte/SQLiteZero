@@ -237,11 +237,22 @@ public class SQLiteStatement {
         }
     }
     
+    let paramPrefixes: [Character] = [":", "$", "@"]
+    
     func bind(_ args: [String: Any?]) throws {
         var posArgs = [Any?](repeating: nil, count: args.count)
         
         for (k, v) in args {
-            let index = sqlite3_bind_parameter_index(stmt, k) - 1
+            var index = sqlite3_bind_parameter_index(stmt, k) - 1
+            if index == -1 {
+                index = sqlite3_bind_parameter_index(stmt, ":" + k) - 1
+            }
+            if index == -1 {
+                index = sqlite3_bind_parameter_index(stmt, "$" + k) - 1
+            }
+            if index == -1 {
+                index = sqlite3_bind_parameter_index(stmt, "@" + k) - 1
+            }
             if index == -1 {
                 throw SQLiteError(code: SQLITE_ERROR, message: "Invalid bind parameter name: \(k)")
             }

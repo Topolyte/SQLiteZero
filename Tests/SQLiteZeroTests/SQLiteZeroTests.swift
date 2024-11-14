@@ -43,7 +43,6 @@ import Testing
     guard let row = row else {
         return
     }
-    print(row)
     #expect(row.count == 5)
     
     #expect(row["i"] == Int64(1))
@@ -117,7 +116,7 @@ import Testing
         (99, :name, :balance)
         returning id
     """,
-    [":name": "noa", ":balance": 99.66])
+    [":name": "noa", "balance": 99.66])
     
     #expect(try select.next()?["id"] == 99)
 }
