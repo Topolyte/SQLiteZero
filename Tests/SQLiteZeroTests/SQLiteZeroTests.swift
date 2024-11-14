@@ -23,10 +23,10 @@ import Testing
     
     #expect(row.count == 5)
     
-    #expect(row[0] as? Int64 == 1)
-    #expect(row[1] as? Double == 1.1)
-    #expect(row[2] as? String == "one")
-    #expect(row[3] as? Data == Data([0xCA, 0xFE, 0xBA, 0xBE]))
+    #expect(row[0] == Int64(1))
+    #expect(row[1] == 1.1)
+    #expect(row[2] == "one")
+    #expect(row[3] == Data([0xCA, 0xFE, 0xBA, 0xBE]))
     #expect(row[4] == nil)
 
     let row2 = try stmt.next()
@@ -46,10 +46,10 @@ import Testing
     print(row)
     #expect(row.count == 5)
     
-    #expect(row["i"] as? Int64 == 1)
-    #expect(row["d"] as? Double == 1.1)
-    #expect(row["s"] as? String == "one")
-    #expect(row["h"] as? Data == Data([0xCA, 0xFE, 0xBA, 0xBE]))
+    #expect(row["i"] == Int64(1))
+    #expect(row["d"] == 1.1)
+    #expect(row["s"] == "one")
+    #expect(row["h"] == Data([0xCA, 0xFE, 0xBA, 0xBE]))
     #expect(row["u"] == nil)
     #expect(row["notfound"] == nil)
 }
@@ -89,6 +89,7 @@ import Testing
     
     #expect(!select.hasRow)
     #expect(select.colNames == ["id", "name", "balance"])
+    #expect(try select.all().isEmpty)
 }
 
 @Test func bindings() async throws {
@@ -97,17 +98,28 @@ import Testing
     
     let select = try db.execute(
     """
-        insert into t(id, name, balance) values(random(), ?, ?)
+        insert into t(id, name, balance)
+        values(99, ?, ?)
         returning id
     """,
     ["noa", 99.66])
+
+    #expect(try select.next()?["id"] == 99)
+}
+
+@Test func namedBindings() async throws {
+    let db = try SQLite(":memory:")
+    try createTestTable1(db)
     
-    #expect(select.hasRow)
-    guard let row = try select.next() else {
-        return
-    }
+    let select = try db.execute(
+    """
+        insert into t(id, name, balance) values
+        (99, :name, :balance)
+        returning id
+    """,
+    [":name": "noa", ":balance": 99.66])
     
-    #expect(row["id"] as? Int64 != nil)
+    #expect(try select.next()?["id"] == 99)
 }
 
 @Test func typeConversion() async throws {
@@ -121,14 +133,54 @@ import Testing
         return
     }
 
-    #expect(row.asInt64("d") == Int64(1))
-    #expect(row.asInt64("s") == Int64(1))
-    #expect(row.asDouble("i") == Double(1))
-    #expect(row.asDouble("s") == Double(1))
-    #expect(row.asString("i") == "1")
-    #expect(row.asString("d") == "1.1")
-    #expect(row.asString("h") == "abc")
+    #expect(row["i"] == true)
+    #expect(row["d"] == 1.1)
+    #expect(row["s"] == Int64(1))
+    #expect(row["i"] == Double(1))
+    #expect(row["s"] == Double(1))
+    #expect(row["i"] == "1")
+    #expect(row["d"] == "1.1")
+    #expect(row["h"] == "abc")
+    #expect(row["u"] == nil)
 }
+
+@Test func one() async throws {
+    let db = try SQLite(":memory:")
+    let tooMany = try db.execute("select * from (values (1, 'noa'), (2, 'mia'))")
+    
+    #expect(throws: SQLiteError.self) {
+        _ = try tooMany.one()
+    }
+    
+    let noRows = try db.execute("select 1 where 1 = 2")
+    #expect(throws: SQLiteError.self) {
+        _ = try noRows.one()
+    }
+
+    let oneRow = try db.execute("select 1, 'noa'")
+    let row = try oneRow.one()
+    #expect(row == SQLiteRow([.integer(1), .text("noa")]))
+}
+
+@Test func multipleStatements() async throws {
+    let db = try SQLite(":memory:")
+    let last = try db.execute(
+    """
+        create table t(
+            id integer primary key,
+            name text not null
+        );
+    
+        insert into t(id, name) values
+        (1, 'xan'),
+        (2, 'mia');
+    
+        select id, name from t order by id;
+    """)
+    
+    #expect(try last.next()?["name"] == "xan")
+}
+
 
 func createTestTable1(_ db: SQLite) throws {
     let _ = try db.execute(
@@ -150,3 +202,5 @@ func createTestTable1(_ db: SQLite) throws {
         (3, 'ari', 0.01, 0, null)
     """)
 }
+
+

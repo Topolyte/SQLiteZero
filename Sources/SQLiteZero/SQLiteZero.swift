@@ -35,105 +35,107 @@ public struct SQLiteError: Error, CustomStringConvertible {
     }
 }
 
-public struct SQLiteRow: Sequence {
-    let values: [Any?]
+public enum SQLiteValue: Equatable {
+    case null
+    case integer(Int64)
+    case double(Double)
+    case text(String)
+    case blob(Data)
+}
+
+public struct SQLiteRow: Sequence, Equatable {
+    let values: [SQLiteValue]
     let colNames: [String]
     
-    public subscript(_ index: Int) -> Any? {
-        return values[index]
+    public init(values: [SQLiteValue], colNames: [String]) {
+        self.values = values
+        self.colNames = colNames
     }
     
-    public subscript(_ name: String) -> Any? {
+    public init(_ values: [SQLiteValue]) {
+        self.values = values
+        self.colNames = (0..<values.count).map{ String($0) }
+    }
+    
+    public subscript<T>(_ index: Int) -> T? {
+        let value = values[index]
+        
+        switch value {
+        case let .integer(v):
+            switch T.self {
+            case is Int64.Type:
+                return v as? T
+            case is Int.Type:
+                return Int(exactly: v) as? T
+            case is Bool.Type:
+                return (v != 0) as? T
+            case is Double.Type:
+                return Double(exactly: v) as? T
+            case is String.Type:
+                return String(describing: v) as? T
+            default: return nil
+            }
+        case let .double(v):
+            switch T.self  {
+            case is Double.Type:
+                return v as? T
+            case is Int.Type:
+                return Int(exactly: v) as? T
+            case is Int64.Type:
+                return Int64(exactly: v) as? T
+            case is String.Type:
+                return String(describing: v) as? T
+            case is Bool.Type:
+                return (v != 0.0) as? T
+            default: return nil
+            }
+        case let .text(v):
+            switch T.self {
+            case is String.Type:
+                return v as? T
+            case is Data.Type:
+                return v.data(using: .utf8) as? T
+            case is Int.Type:
+                return Int(v) as? T
+            case is Int64.Type:
+                return Int64(v) as? T
+            case is Double.Type:
+                return Double(v) as? T
+            case is Bool.Type:
+                return (v.lowercased() == "true") as? T
+            default: return nil
+            }
+        case let .blob(v):
+            switch T.self {
+            case is Data.Type:
+                return v as? T
+            case is String.Type:
+                return String(data: v, encoding: .utf8) as? T
+            default: return nil
+            }
+        case .null:
+            return nil
+        }
+
+    }
+
+    public subscript<T>(_ name: String) -> T? {
         guard let index = colNames.firstIndex(of: name) else {
             return nil
         }
         return self[index]
     }
-    
-    public func asInt64(_ index: Int) -> Int64? {
-        guard let value = self[index] else {
-            return nil
-        }
-
-        switch value {
-        case let v as Int64: return v
-        case let v as Double: return Int64(v)
-        case let v as String: return Int64(v)
-        default: return nil
-        }
-    }
-    
-    public func asInt64(_ name: String) -> Int64? {
-        if let index = colNames.firstIndex(of: name) {
-            return self.asInt64(index)
-        }
-        return nil
-    }
-
-    public func asDouble(_ index: Int) -> Double? {
-        guard let value = self[index] else {
-            return nil
-        }
-
-        switch value {
-        case let v as Double: return v
-        case let v as Int64: return Double(v)
-        case let v as String: return Double(v)
-        default: return nil
-        }
-    }
-    
-    public func asDouble(_ name: String) -> Double? {
-        if let index = colNames.firstIndex(of: name) {
-            return self.asDouble(index)
-        }
-        return nil
-    }
-
-    public func asString(_ index: Int) -> String? {
-        guard let value = self[index] else {
-            return nil
-        }
-        
-        switch value {
-        case let v as String: return v
-        case let v as Data: return String(data: v, encoding: .utf8)
-        default: return String(describing: value)
-        }
-    }
-    
-    public func asString(_ name: String) -> String? {
-        if let index = colNames.firstIndex(of: name) {
-            return self.asString(index)
-        }
-        return nil
-    }
-    
-    public func asData(_ index: Int) -> Data? {
-        guard let value = self[index] else {
-            return nil
-        }
-        
-        switch value {
-        case let v as Data: return v
-        case let v as String: return v.data(using: .utf8)
-        default: return nil
-        }
-    }
-    
-    public func asData(_ name: String) -> Data? {
-        if let index = colNames.firstIndex(of: name) {
-            return self.asData(index)
-        }
-        return nil
-    }
-        
+                    
     public var count: Int {
         return values.count
     }
     
     public func makeIterator() -> some IteratorProtocol {
         return zip(colNames, values).makeIterator()
+    }
+    
+    public static func == (lhs: SQLiteRow, rhs: SQLiteRow) -> Bool {
+        return lhs.values == rhs.values
     }
 }
 
@@ -180,6 +182,24 @@ public class SQLiteStatement {
         return row
     }
     
+    public func one() throws -> SQLiteRow {
+        guard let row = try next() else {
+            throw SQLiteError(code: Int32(SQLITE_ERROR), message: "No rows returned")
+        }
+        guard !hasRow else {
+            throw SQLiteError(code: Int32(SQLITE_ERROR), message: "More than one row returned")
+        }
+        return row
+    }
+    
+    public func all() throws -> [SQLiteRow] {
+        var res = [SQLiteRow]()
+        while let row = try next() {
+            res.append(row)
+        }
+        return res
+    }
+        
     func bind(_ args: [Any?]) throws {
         var rc: Int32 = SQLITE_OK
         
@@ -191,7 +211,7 @@ public class SQLiteStatement {
                 if v <= Int64.max {
                     rc = sqlite3_bind_int64(stmt, Int32(i + 1), Int64(v))
                 } else {
-                    rc = sqlite3_bind_double(stmt, Int32(i + 1), Double(v))
+                    rc = sqlite3_bind_text(stmt, Int32(i + 1), v.description, -1, SQLITE_TRANSIENT)
                 }
             case let v as any BinaryInteger:
                 rc = sqlite3_bind_int64(stmt, Int32(i + 1), Int64(v))
@@ -257,21 +277,21 @@ public class SQLiteStatement {
 
     func readRow() -> SQLiteRow {
         let count = sqlite3_column_count(stmt)
-        var values: [Any?] = []
+        var values: [SQLiteValue] = []
         for i in 0..<count {
             let type = sqlite3_column_type(stmt, i)
             switch type {
             case SQLITE_INTEGER:
-                values.append(Int64(sqlite3_column_int64(stmt, i)))
+                values.append(.integer(Int64(sqlite3_column_int64(stmt, i))))
             case SQLITE_FLOAT:
-                values.append(Double(sqlite3_column_double(stmt, i)))
+                values.append(.double(Double(sqlite3_column_double(stmt, i))))
             case SQLITE_TEXT:
-                values.append(String(cString: sqlite3_column_text(stmt, i)))
+                values.append(.text(String(cString: sqlite3_column_text(stmt, i))))
             case SQLITE_BLOB:
-                values.append(Data(bytes: sqlite3_column_blob(stmt, i),
-                                count: Int(sqlite3_column_bytes(stmt, i))))
+                values.append(.blob(Data(bytes: sqlite3_column_blob(stmt, i),
+                                count: Int(sqlite3_column_bytes(stmt, i)))))
             default:
-                values.append(nil)
+                values.append(.null)
             }
         }
         
