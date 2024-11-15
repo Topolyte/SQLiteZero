@@ -67,8 +67,6 @@ public struct SQLiteRow: Sequence, Equatable {
                 return v as? T
             case is Int.Type:
                 return Int(exactly: v) as? T
-            case is UInt64.Type:
-                return UInt64(exactly: v) as? T
             case is Bool.Type:
                 return (v != 0) as? T
             case is Double.Type:
@@ -85,8 +83,6 @@ public struct SQLiteRow: Sequence, Equatable {
                 return Int(exactly: v) as? T
             case is Int64.Type:
                 return Int64(exactly: v) as? T
-            case is UInt64.Type:
-                return UInt64(exactly: v) as? T
             case is String.Type:
                 return String(describing: v) as? T
             case is Bool.Type:
@@ -103,8 +99,6 @@ public struct SQLiteRow: Sequence, Equatable {
                 return Int(v) as? T
             case is Int64.Type:
                 return Int64(v) as? T
-            case is UInt64.Type:
-                return UInt64(v) as? T
             case is Double.Type:
                 return Double(v) as? T
             case is Bool.Type:
@@ -182,7 +176,7 @@ public class SQLiteStatement {
         }
     }
     
-    public func execute(_ args: [String: Any?]? = nil) throws {
+    public func execute(_ args: [String: Any?]) throws {
         return try execute(SQLiteArgs(args))
     }
 
@@ -243,7 +237,8 @@ public class SQLiteStatement {
                 rc = sqlite3_bind_text(stmt, Int32(i + 1), v, -1, SQLITE_TRANSIENT)
             case let v as Data:
                 v.withUnsafeBytes { buf in
-                    rc = sqlite3_bind_blob(stmt, Int32(i + 1), buf.baseAddress, -1, SQLITE_TRANSIENT)
+                    rc = sqlite3_bind_blob(
+                        stmt, Int32(i + 1), buf.baseAddress, Int32(buf.count), SQLITE_TRANSIENT)
                 }
             case let v as Bool:
                 rc = sqlite3_bind_int(stmt, Int32(i + 1), v ? 1 : 0)
@@ -356,9 +351,11 @@ public class SQLiteStatement {
     }
     
     deinit {
-        let rc = sqlite3_finalize(stmt)
-        if rc != SQLITE_OK {
-            log.error("Failed to finalize statement: \(rc)")
+        if let stmt = stmt {
+            let rc = sqlite3_finalize(stmt)
+            if rc != SQLITE_OK {
+                log.error("Failed to finalize statement: \(rc)")
+            }
         }
     }
 }
@@ -370,7 +367,11 @@ enum SQLiteArgs {
     
     init (_ params: [Any?]?) {
         if let params = params {
-            self = .positional(params)
+            if params.count == 1 && params.first is [String:Any?] {
+                self = .named(params.first! as! [String:Any?])
+            } else {
+                self = .positional(params)
+            }
         } else {
             self = .none
         }
@@ -415,7 +416,7 @@ public class SQLite {
     }
 
     @discardableResult
-    public func execute(_ sql: String, _ args: [String: Any?]?) throws -> SQLiteStatement {
+    public func execute(_ sql: String, _ args: [String: Any?]) throws -> SQLiteStatement {
         let sargs = SQLiteArgs(args)
         return try execute(sql, sargs)
     }
