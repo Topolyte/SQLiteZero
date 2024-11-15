@@ -67,6 +67,8 @@ public struct SQLiteRow: Sequence, Equatable {
                 return v as? T
             case is Int.Type:
                 return Int(exactly: v) as? T
+            case is UInt64.Type:
+                return UInt64(exactly: v) as? T
             case is Bool.Type:
                 return (v != 0) as? T
             case is Double.Type:
@@ -83,6 +85,8 @@ public struct SQLiteRow: Sequence, Equatable {
                 return Int(exactly: v) as? T
             case is Int64.Type:
                 return Int64(exactly: v) as? T
+            case is UInt64.Type:
+                return UInt64(exactly: v) as? T
             case is String.Type:
                 return String(describing: v) as? T
             case is Bool.Type:
@@ -99,10 +103,18 @@ public struct SQLiteRow: Sequence, Equatable {
                 return Int(v) as? T
             case is Int64.Type:
                 return Int64(v) as? T
+            case is UInt64.Type:
+                return UInt64(v) as? T
             case is Double.Type:
                 return Double(v) as? T
             case is Bool.Type:
-                return (v.lowercased() == "true") as? T
+                let b = v.lowercased()
+                if b == "true" {
+                    return true as? T
+                } else if b == "false" {
+                    return false as? T
+                }
+                return nil
             default: return nil
             }
         case let .blob(v):

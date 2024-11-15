@@ -123,8 +123,16 @@ import Testing
 
 @Test func typeConversion() async throws {
     let db = try SQLite(":memory:")
-    let select = try db.execute(
-        "SELECT 1 as i, 1.1 as d, '1' as s, cast('abc' as blob) as h, null as u")
+    let select = try db.execute("""
+        SELECT
+            1 as int,
+            -1 as nint,
+            1.1 as double,
+            '1' as text,
+            cast('abc' as blob) as blob,
+            null as nl,
+            'true' as sbool
+        """)
     let row = try select.next()
     #expect(row != nil)
     
@@ -132,15 +140,21 @@ import Testing
         return
     }
 
-    #expect(row["i"] == true)
-    #expect(row["d"] == 1.1)
-    #expect(row["s"] == Int64(1))
-    #expect(row["i"] == Double(1))
-    #expect(row["s"] == Double(1))
-    #expect(row["i"] == "1")
-    #expect(row["d"] == "1.1")
-    #expect(row["h"] == "abc")
-    #expect(row["u"] == nil)
+    #expect(row["int"] == true)
+    #expect(row["sbool"] == true)
+    #expect(row["double"] == 1.1)
+    #expect(row["text"] == Int64(1))
+    #expect(row["int"] == 1)
+    #expect(row["nint"] == -1)
+    #expect(row["nint"] as UInt64? == nil)
+    #expect(row["int"] == UInt64(1))
+    #expect(row["int"] == Double(1))
+    #expect(row["text"] == Double(1))
+    #expect(row["int"] == "1")
+    #expect(row["double"] == "1.1")
+    #expect(row["blob"] == "abc")
+    #expect(row["nl"] == nil)
+    
 }
 
 @Test func one() async throws {
