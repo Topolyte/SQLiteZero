@@ -1,5 +1,5 @@
 import Foundation
-import CSQLiteZero
+import CSQLite
 import os
 
 public struct SqliteOpenOptions: OptionSet, Sendable {
@@ -159,7 +159,7 @@ public class SQLiteStatement {
     public var hasRow = false
     public var colNames: [String] = []
 
-    unowned var db: SQLite
+    weak var db: SQLite?
     let log: Logger
     var stmt: OpaquePointer! = nil
     
@@ -217,6 +217,10 @@ public class SQLiteStatement {
     public func clearBindings() {
         sqlite3_clear_bindings(stmt)
     }
+    
+    public var handle: OpaquePointer? {
+        return stmt
+    }
         
     func bind(_ args: [Any?]) throws {
         var rc: Int32 = SQLITE_OK
@@ -248,7 +252,7 @@ public class SQLiteStatement {
             }
             
             if rc != SQLITE_OK {
-                throw SQLiteError(code: rc, message: errorMessage(db.db, rc))
+                throw SQLiteError(code: rc, message: errorMessage(db?.db, rc))
             }
         }
     }
@@ -281,7 +285,7 @@ public class SQLiteStatement {
     func execute(_ params: SQLiteArgs) throws {
         let rc = sqlite3_reset(stmt)
         if rc != SQLITE_OK {
-            throw SQLiteError(code: rc, message: errorMessage(db.db, rc))
+            throw SQLiteError(code: rc, message: errorMessage(db?.db, rc))
         }
         
         switch params {
@@ -300,7 +304,7 @@ public class SQLiteStatement {
         self.colNames = []
 
         try step()
-        self.changes = db.changes
+        self.changes = db?.changes ?? 0
         self.colNames = readColNames()
     }
         
@@ -347,7 +351,7 @@ public class SQLiteStatement {
         if rc == SQLITE_ROW {
             self.hasRow = true
         } else {
-            throw SQLiteError(code: rc, message: errorMessage(db.db, rc))
+            throw SQLiteError(code: rc, message: errorMessage(db?.db, rc))
         }
     }
     
@@ -481,13 +485,17 @@ public class SQLite {
         return self.db != nil
     }
     
+    public var handle: OpaquePointer? {
+        return db
+    }
+    
     deinit {
         let rc = sqlite3_close(db)
         if rc == SQLITE_OK {
             return
         }
         if rc != SQLITE_BUSY {
-            log.error("Failed to close database because of unclosed statements")
+            log.error("Failed to close database because there are unclosed statements")
         } else {
             log.error("Failed to close database: \(errorMessage(self.db, rc))")
         }
