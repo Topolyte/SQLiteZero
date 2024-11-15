@@ -156,7 +156,7 @@ import Testing
     
 }
 
-@Test func one() async throws {
+@Test func first() async throws {
     let db = try SQLite(":memory:")
     
     let noRows = try db.execute("select 1 where 1 = 2")
