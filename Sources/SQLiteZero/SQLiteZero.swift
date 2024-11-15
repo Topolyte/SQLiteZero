@@ -213,6 +213,10 @@ public class SQLiteStatement {
         }
         return res
     }
+    
+    public func clearBindings() {
+        sqlite3_clear_bindings(stmt)
+    }
         
     func bind(_ args: [Any?]) throws {
         var rc: Int32 = SQLITE_OK
@@ -289,11 +293,6 @@ public class SQLiteStatement {
         self.changes = 0
         self.hasRow = false
         self.colNames = []
-        
-        let rc = sqlite3_reset(stmt)
-        if rc != SQLITE_OK {
-            throw SQLiteError(code: rc, message: errorMessage(db.db, rc))
-        }
 
         try step()
         self.changes = db.changes
@@ -386,7 +385,7 @@ public class SQLite {
     var statements: Cache<String, SQLiteStatement>
     
     public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create],
-                cacheSize: Int = SQLite.defaultCacheSize) throws
+                statementCacheSize: Int = SQLite.defaultCacheSize) throws
     {
         let rc = sqlite3_open_v2(path, &db, flags.rawValue, nil)
         
@@ -396,7 +395,7 @@ public class SQLite {
             throw SQLiteError(code: rc, message: message)
         }
         
-        statements = Cache(maxCount: cacheSize)
+        statements = Cache(maxCount: statementCacheSize)
         busyTimeout(seconds: SQLite.defaultBusyTimeout)
     }
     
@@ -404,16 +403,19 @@ public class SQLite {
         return try execute(sql, SQLiteArgs.none)
     }
     
-    public func execute(_ sql: String, _ args: [Any?]?) throws -> SQLiteStatement {
+    @discardableResult
+    public func execute(_ sql: String, _ args: Any?...) throws -> SQLiteStatement {
         let sargs = SQLiteArgs(args)
         return try execute(sql, sargs)
     }
 
+    @discardableResult
     public func execute(_ sql: String, _ args: [String: Any?]?) throws -> SQLiteStatement {
         let sargs = SQLiteArgs(args)
         return try execute(sql, sargs)
     }
 
+    @discardableResult
     func execute(_ sql: String, _ args: SQLiteArgs) throws -> SQLiteStatement {
         let stmt = try prepare(sql)
         try stmt.execute(args)
@@ -434,11 +436,10 @@ public class SQLite {
 
     func prepare(_ sql: String) throws -> SQLiteStatement {
         if let stmt = statements[sql] {
-            let rc = sqlite3_clear_bindings(stmt.stmt)
+            var rc = sqlite3_reset(stmt.stmt)
             if rc != SQLITE_OK {
                 throw SQLiteError(code: rc, message: errorMessage(db, rc))
             }
-
             return stmt
         }
 

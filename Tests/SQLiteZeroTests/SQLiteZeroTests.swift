@@ -101,7 +101,7 @@ import Testing
         values(99, ?, ?)
         returning id
     """,
-    ["noa", 99.66])
+    "noa", 99.66)
 
     #expect(try select.next()?["id"] == 99)
 }
@@ -144,6 +144,7 @@ import Testing
     #expect(row["sbool"] == true)
     #expect(row["double"] == 1.1)
     #expect(row["text"] == Int64(1))
+    #expect(row["text"] == UInt64(1))
     #expect(row["int"] == 1)
     #expect(row["nint"] == -1)
     #expect(row["nint"] as UInt64? == nil)
@@ -189,6 +190,16 @@ import Testing
     #expect(try last.first()["name"] == "xan")
 }
 
+@Test func statementCaching() async throws {
+    let size = 3
+    let db = try SQLite(":memory:", statementCacheSize: size)
+    
+    for i in 0..<size * 2 {
+        let sql = "select \(i % (size * 2)), ?"
+        try db.execute(sql, i)
+        #expect(db.statements.count <= size)
+    }
+}
 
 func createTestTable1(_ db: SQLite) throws {
     let _ = try db.execute(

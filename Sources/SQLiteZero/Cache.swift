@@ -12,7 +12,7 @@ where K: Hashable
     var lru: Deque<K> = []
     
     init(maxCount: Int) {
-        self.maxCount = Swift.min(maxCount, 1)
+        self.maxCount = Swift.max(maxCount, 1)
     }
     
     subscript (key: K) -> V? {
@@ -31,6 +31,10 @@ where K: Hashable
                 }
             }
         }
+    }
+    
+    var count: Int {
+        return store.count
     }
     
     func removeAll() {
