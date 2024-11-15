@@ -186,7 +186,7 @@ public class SQLiteStatement {
         return try execute(SQLiteArgs(args))
     }
 
-    public func execute(_ args: [Any?]? = nil) throws {
+    public func execute(_ args: Any?...) throws {
         return try execute(SQLiteArgs(args))
     }
         
@@ -279,6 +279,11 @@ public class SQLiteStatement {
     }
     
     func execute(_ params: SQLiteArgs) throws {
+        let rc = sqlite3_reset(stmt)
+        if rc != SQLITE_OK {
+            throw SQLiteError(code: rc, message: errorMessage(db.db, rc))
+        }
+        
         switch params {
             case .none: break
         case .named(let args):
@@ -378,15 +383,11 @@ enum SQLiteArgs {
 
 public class SQLite {
     public static let defaultBusyTimeout = TimeInterval(1.0)
-    public static let defaultCacheSize = 100
     
     var db: OpaquePointer! = nil
     let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "", category: "General")
-    var statements: Cache<String, SQLiteStatement>
     
-    public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create],
-                statementCacheSize: Int = SQLite.defaultCacheSize) throws
-    {
+    public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create]) throws {
         let rc = sqlite3_open_v2(path, &db, flags.rawValue, nil)
         
         if rc != SQLITE_OK {
@@ -395,10 +396,10 @@ public class SQLite {
             throw SQLiteError(code: rc, message: message)
         }
         
-        statements = Cache(maxCount: statementCacheSize)
         busyTimeout(seconds: SQLite.defaultBusyTimeout)
     }
     
+    @discardableResult
     public func execute(_ sql: String) throws -> SQLiteStatement {
         return try execute(sql, SQLiteArgs.none)
     }
@@ -435,14 +436,6 @@ public class SQLite {
     }
 
     func prepare(_ sql: String) throws -> SQLiteStatement {
-        if let stmt = statements[sql] {
-            var rc = sqlite3_reset(stmt.stmt)
-            if rc != SQLITE_OK {
-                throw SQLiteError(code: rc, message: errorMessage(db, rc))
-            }
-            return stmt
-        }
-
         var stmt: SQLiteStatement? = nil
         
         try sql.withCString {
@@ -481,7 +474,6 @@ public class SQLite {
             throw SQLiteError(code: SQLITE_ERROR, message: "BUG: stmt == nil")
         }
         
-        statements[stmt.sql] = stmt
         return stmt
     }
     
@@ -490,7 +482,6 @@ public class SQLite {
     }
     
     deinit {
-        statements.removeAll()
         let rc = sqlite3_close(db)
         if rc == SQLITE_OK {
             return

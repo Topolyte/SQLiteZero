@@ -190,15 +190,23 @@ import Testing
     #expect(try last.first()["name"] == "xan")
 }
 
-@Test func statementCaching() async throws {
-    let size = 3
-    let db = try SQLite(":memory:", statementCacheSize: size)
+@Test func statementReuse() async throws {
+    let N = 50
+    let db = try SQLite(":memory:")
     
-    for i in 0..<size * 2 {
-        let sql = "select \(i % (size * 2)), ?"
-        try db.execute(sql, i)
-        #expect(db.statements.count <= size)
+    try createTestTable1(db)
+    
+    let stmt1 = try db.execute("insert into t(id, name, balance) values(?, ?, ?)",
+                               4, "stmt1", Double.random(in: 0.5...100))
+    let stmt2 = try db.execute("update t set member = ? where id = ?", true, 4)
+    
+    for i in 5...N {
+        try stmt1.execute(i, "stmt1", Double.random(in: 0.5...100))
+        try stmt2.execute(true, i)
     }
+    
+    #expect(try db.execute(
+        "select count(*) as count from t where member = true").first()["count"] == N-1)
 }
 
 func createTestTable1(_ db: SQLite) throws {
