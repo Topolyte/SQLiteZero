@@ -16,7 +16,8 @@ let package = Package(
             dependencies: ["CSQLite"]),
         .target(
             name: "CSQLite",
-            publicHeadersPath: "./"),
+            publicHeadersPath: "./",
+            cSettings: [.unsafeFlags(["-Wno-everything"])]),
         .testTarget(
             name: "SQLiteZeroTests",
             dependencies: ["SQLiteZero"]

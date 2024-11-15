@@ -376,7 +376,7 @@ enum SQLiteArgs {
             self = .none
         }
     }
-    
+
     init (_ params: [String: Any?]?) {
         if let params = params {
             self = .named(params)

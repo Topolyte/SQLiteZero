@@ -191,7 +191,6 @@ import Testing
 @Test func statementReuse() async throws {
     let N = 50
     let db = try SQLite(":memory:")
-    
     try createTestTable1(db)
     
     let stmt1 = try db.execute("insert into t(id, name, balance) values(?, ?, ?)",
