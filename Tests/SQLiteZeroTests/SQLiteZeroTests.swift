@@ -8,7 +8,7 @@ import Testing
 }
 
 @Test func select() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     let stmt = try db.execute("SELECT 1 as i, 1.1 as d, 'one' as s, X'CAFEBABE' as h, null as u")
     #expect(stmt.hasRow)
     
@@ -35,7 +35,7 @@ import Testing
 }
 
 @Test func selectDict() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     let stmt = try db.execute("SELECT 1 as i, 1.1 as d, 'one' as s, X'CAFEBABE' as h, null as u")
     let row = try stmt.next()
     #expect(row != nil)
@@ -54,7 +54,7 @@ import Testing
 }
 
 @Test func selectMultiple() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     try createTestTable1(db)
     
     let select = try db.execute(
@@ -76,7 +76,7 @@ import Testing
 }
 
 @Test func emptyResult() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     try createTestTable1(db)
     
     let select = try db.execute(
@@ -92,7 +92,7 @@ import Testing
 }
 
 @Test func bindings() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     try createTestTable1(db)
     
     let select = try db.execute(
@@ -107,7 +107,7 @@ import Testing
 }
 
 @Test func namedBindings() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     try createTestTable1(db)
     
     let select = try db.execute(
@@ -122,7 +122,7 @@ import Testing
 }
 
 @Test func typeConversion() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     let select = try db.execute("""
         SELECT
             1 as int,
@@ -157,7 +157,7 @@ import Testing
 }
 
 @Test func first() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     
     let noRows = try db.execute("select 1 where 1 = 2")
     #expect(throws: SQLiteError.self) {
@@ -170,7 +170,7 @@ import Testing
 }
 
 @Test func multipleStatements() async throws {
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     let last = try db.execute(
     """
         create table t(
@@ -190,7 +190,7 @@ import Testing
 
 @Test func statementReuse() async throws {
     let N = 50
-    let db = try SQLite(":memory:")
+    let db = try SQLite()
     try createTestTable1(db)
     
     let stmt1 = try db.execute("insert into t(id, name, balance) values(?, ?, ?)",

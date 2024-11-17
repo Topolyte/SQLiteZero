@@ -176,10 +176,6 @@ public class SQLiteStatement {
         }
     }
     
-    public func execute(_ args: [String: Any?]) throws {
-        return try execute(SQLiteArgs(args))
-    }
-
     public func execute(_ args: Any?...) throws {
         return try execute(SQLiteArgs(args))
     }
@@ -365,7 +361,7 @@ enum SQLiteArgs {
     case positional([Any?])
     case named([String: Any?])
     
-    init (_ params: [Any?]?) {
+    init (_ params: [Any?]? = nil) {
         if let params = params {
             if params.count == 1 && params.first is [String:Any?] {
                 self = .named(params.first! as! [String:Any?])
@@ -376,14 +372,10 @@ enum SQLiteArgs {
             self = .none
         }
     }
+}
 
-    init (_ params: [String: Any?]?) {
-        if let params = params {
-            self = .named(params)
-        } else {
-            self = .none
-        }
-    }
+public enum SQLiteTransactionType: String {
+    case deferred, immedate, exclusive
 }
 
 public class SQLite {
@@ -391,6 +383,10 @@ public class SQLite {
     
     var db: OpaquePointer! = nil
     let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "", category: "General")
+    
+    public convenience init() throws {
+        try self.init(":memory:")
+    }
     
     public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create]) throws {
         let rc = sqlite3_open_v2(path, &db, flags.rawValue, nil)
@@ -416,16 +412,39 @@ public class SQLite {
     }
 
     @discardableResult
-    public func execute(_ sql: String, _ args: [String: Any?]) throws -> SQLiteStatement {
-        let sargs = SQLiteArgs(args)
-        return try execute(sql, sargs)
-    }
-
-    @discardableResult
     func execute(_ sql: String, _ args: SQLiteArgs) throws -> SQLiteStatement {
         let stmt = try prepare(sql)
         try stmt.execute(args)
         return stmt
+    }
+    
+    public func transaction<T>(
+        _ txType: SQLiteTransactionType = .deferred, _ f: () throws -> T) throws -> T
+    {
+        var savepoint = inTransaction ? UUID().uuidString : nil
+        
+        if let savepoint = savepoint {
+            try execute("savepoint \"\(savepoint)\"")
+        } else {
+            try execute("begin \(txType.rawValue)")
+        }
+        
+        do {
+            let res = try f()
+            if let savepoint = savepoint {
+                try execute("release savepoint \"\(savepoint)\"")
+            } else {
+                try execute("commit")
+            }
+            return res
+        } catch let err {
+            if let savepoint = savepoint {
+                _ = try? execute("rollback to \"\(savepoint)\"")
+            } else {
+                _ = try? execute("rollback")
+            }
+            throw err
+        }
     }
         
     public var changes: Int64 {
