@@ -57,6 +57,15 @@ public struct SQLiteRow: Sequence, Equatable {
         self.colNames = (0..<values.count).map{ String($0) }
     }
     
+    public func isNull(_ index: Int) -> Bool {
+        switch values[index] {
+        case .null:
+            return true
+        default:
+            return false
+        }
+    }
+    
     public subscript<T>(_ index: Int) -> T? {
         let value = values[index]
         
@@ -147,7 +156,7 @@ public struct SQLiteRow: Sequence, Equatable {
 
 let SQLITE_TRANSIENT: sqlite3_destructor_type = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-public class SQLiteStatement {
+public class SQLiteStatement: Sequence, IteratorProtocol {
     public let sql: String
     public var changes: Int64 = 0
     public var hasRow = false
@@ -180,7 +189,7 @@ public class SQLiteStatement {
         return try execute(SQLiteArgs(args))
     }
         
-    public func next() throws -> SQLiteRow? {
+    public func nextRow() throws -> SQLiteRow? {
         guard hasRow else {
             return nil
         }
@@ -189,19 +198,37 @@ public class SQLiteStatement {
         return row
     }
     
-    public func first() throws -> SQLiteRow {
-        guard let row = try next() else {
+    public func one() throws -> SQLiteRow {
+        guard let row = try nextRow() else {
             throw SQLiteError(code: Int32(SQLITE_ERROR), message: "No rows returned")
+        }
+        guard try nextRow() == nil else {
+            throw SQLiteError(code: Int32(SQLITE_ERROR), message: "More than one row returned")
         }
         return row
     }
     
     public func all() throws -> [SQLiteRow] {
         var res = [SQLiteRow]()
-        while let row = try next() {
+        while let row = try nextRow() {
             res.append(row)
         }
         return res
+    }
+    
+    public func makeIterator() -> SQLiteStatement {
+        return self
+    }
+    
+    public func next() -> Result<SQLiteRow, Error>? {
+        do {
+            if let row = try nextRow() {
+                return .success(row)
+            }
+        } catch {
+            return .failure(error)
+        }
+        return nil
     }
     
     public func clearBindings() {
@@ -447,13 +474,6 @@ public class SQLite {
             throw err
         }
     }
-
-    /*
-    public func transaction (
-        _ txType: SQLiteTransactionType = .deferred, _ f: () throws -> ()) throws
-    {
-        try transaction(txType, { try f() } as () throws -> Optional<Void>)
-    }*/
     
     public var changes: Int64 {
         return sqlite3_changes64(db)
@@ -467,7 +487,7 @@ public class SQLite {
         sqlite3_busy_timeout(db, Int32(seconds * 1000.0))
     }
 
-    func prepare(_ sql: String) throws -> SQLiteStatement {
+    public func prepare(_ sql: String) throws -> SQLiteStatement {
         var stmt: SQLiteStatement? = nil
         
         try sql.withCString {
