@@ -418,10 +418,11 @@ public class SQLite {
         return stmt
     }
     
+    @discardableResult
     public func transaction<T>(
         _ txType: SQLiteTransactionType = .deferred, _ f: () throws -> T) throws -> T
     {
-        var savepoint = inTransaction ? UUID().uuidString : nil
+        let savepoint = inTransaction ? UUID().uuidString : nil
         
         if let savepoint = savepoint {
             try execute("savepoint \"\(savepoint)\"")
@@ -446,7 +447,14 @@ public class SQLite {
             throw err
         }
     }
-        
+
+    /*
+    public func transaction (
+        _ txType: SQLiteTransactionType = .deferred, _ f: () throws -> ()) throws
+    {
+        try transaction(txType, { try f() } as () throws -> Optional<Void>)
+    }*/
+    
     public var changes: Int64 {
         return sqlite3_changes64(db)
     }

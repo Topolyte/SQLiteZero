@@ -206,6 +206,79 @@ import Testing
         "select count(*) as count from t where member = true").first()["count"] == N-1)
 }
 
+@Test func rollback() async throws {
+    let db = try SQLite()
+    
+    try db.execute("""
+        create table t(id integer primary key, comment text);
+    
+        insert into t values (1, 'initial');
+    """)
+    
+    var count: Int = 0
+    
+    #expect(throws: SQLiteError.self) {
+        try db.transaction {
+            try db.execute("insert into t values (2, 'two')")
+            count = try db.execute("select count(*) from t").first()[0]!
+            throw SQLiteError(code: 1, message: "testing")
+        }
+    }
+    
+    #expect(count == 2)
+    #expect(try db.execute("select count(*) from t").first()[0]! == 1)
+}
+
+@Test func commit() async throws {
+    let db = try SQLite()
+    
+    try db.execute("""
+        create table t(id integer primary key, comment text);
+    
+        insert into t values (1, 'initial');
+    """)
+    
+    try db.transaction {
+        try db.execute("insert into t values (2, 'two')")
+    }
+
+    let count: Int = try db.execute("select count(*) from t").first()[0]!
+    #expect(count == 2)
+}
+
+@Test func savepoints() async throws {
+    let db = try SQLite()
+    
+    try db.execute("""
+        create table t(id integer primary key, comment text);
+    
+        insert into t values (1, 'initial');
+    """)
+    
+    var count = 0
+    
+    try db.transaction {
+        try db.execute("insert into t values (2, 'two')")
+        do {
+            try db.transaction {
+                try db.execute("insert into t values (3, 'three')")
+                count = try db.execute("select count(*) from t").first()[0]!
+                #expect(count == 3)
+                throw SQLiteError(code: 1, message: "testing")
+            }
+        } catch {
+            count = try db.execute("select count(*) from t").first()[0]!
+            #expect(count == 2)
+        }
+        
+        try db.transaction {
+            try db.execute("insert into t values (3, 'three')")
+            count = try db.execute("select count(*) from t").first()[0]!
+        }
+        #expect(count == 3)
+    }
+}
+
 func createTestTable1(_ db: SQLite) throws {
     let _ = try db.execute(
     """
