@@ -46,7 +46,7 @@ import Testing
         #expect(["Noa", "Mia"].contains(row["name"]))
     }
     
-    // The most convenient way to ensure that all errors are thrown is to load all rows
+    // The most convenient way to ensure that all errors are handled is to load all rows
     // into an array. This is of course not ideal if the query returns a large number of rows:
     
     let allRows = try db.execute(sql, 1.65).all()
@@ -125,19 +125,40 @@ import Testing
             if let dict = try JSONSerialization.jsonObject(with: note) as? [String: Any?] {
                 #expect(dict["lastSeen"] != nil)
             } else {
-                throw Unexpected("Expected a Dictionary<String, Any>")
+                throw Err.unexpected("Expected a Dictionary<String, Any>")
             }
             
             #expect((row["note"]! as String).hasPrefix(#"{"lastSeen":"#))
         }
     }
+    
+    // A transaction is committed when the closure passed to the transaction() method completes
+    // without throwing an exception. If an exception occurs, the transaction is rolled back.
+    // Transactions can be nested. The inner transactions use savepoints and are
+    // therefore not durable unless the outermost transaction is committed as well:
+    
+    let insert = try db.prepare("insert into person (id, name, height) values (?, ?, 1.68)")
+    let countName = try db.prepare("select count(*) from person where name = ?")
+    
+    try db.transaction {
+        try insert.execute(5, "Liv")
+        #expect(try countName.execute("Liv").one()[0] == 1)
+        
+        #expect(throws: Err.self) {
+            try db.transaction {
+                try insert.execute(6, "Ari")
+                #expect(try countName.execute("Ari").one()[0] == 1)
+                throw Err.testing("Oh no!")
+            }
+        }
+        
+        #expect(try countName.execute("Ari").one()[0] == 0)
+    }
+    #expect(try countName.execute("Liv").one()[0] == 1)
 }
 
-struct Unexpected: Error {
-    let message: String
-    
-    init(_ message: String) {
-        self.message = message
-    }
+enum Err: Error {
+    case unexpected(String)
+    case testing(String)
 }
 

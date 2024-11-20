@@ -186,8 +186,9 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         }
     }
 
-    public func execute(_ args: Any?...) throws {
-        try execute(SQLiteArgs(args))
+    @discardableResult
+    public func execute(_ args: Any?...) throws -> Self {
+        return try execute(SQLiteArgs(args))
     }
         
     public func nextRow() throws -> SQLiteRow? {
@@ -314,7 +315,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         try bind(posArgs)
     }
     
-    func execute(_ params: SQLiteArgs) throws {
+    func execute(_ params: SQLiteArgs) throws -> Self {
         let rc = sqlite3_reset(stmt)
         if rc != SQLITE_OK {
             self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
@@ -329,6 +330,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
             try bind(args)
         }
         try execute()
+        return self
     }
 
     func execute() throws {
