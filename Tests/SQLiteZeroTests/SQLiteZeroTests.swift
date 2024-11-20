@@ -34,6 +34,27 @@ import Testing
     #expect(!stmt.hasRow)
 }
 
+@Test func one() async throws {
+    let db = try SQLite()
+    var stmt = try db.execute("select 1")
+    _ = try stmt.one()
+    #expect(!stmt.hasRow)
+    
+    stmt = try db.execute("select 1 where 2 = 3")
+    #expect(throws: SQLiteError.self) { try stmt.one() }
+    
+    stmt = try db.execute("select * from (values (1),(2))")
+    #expect(throws: SQLiteError.self) { try stmt.one() }
+}
+
+@Test func all() async throws {
+    let db = try SQLite()
+    let rows = try db.execute("select * from (values (1), (2), (3))").all()
+    let values = rows.map { $0[0]! as Int64 }
+    let expected = [Int64(1), Int64(2), Int64(3)]
+    #expect(values == expected)
+}
+
 @Test func selectDict() async throws {
     let db = try SQLite()
     let stmt = try db.execute("SELECT 1 as i, 1.1 as d, 'one' as s, X'CAFEBABE' as h, null as u")

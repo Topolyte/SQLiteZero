@@ -22,15 +22,15 @@ import Testing
         insert into person (id, name, height, is_friend, meta) values
         (1, 'Noa', 1.77, true, cast('{"lastSeen": "2024-11-05"}' as blob)),
         (2, 'Mia', 1.66, false, null),
-        (3, 'Ada', 1.63, true, cast('{"note": "expecting call"}' as blob))
+        (3, 'Ada', 1.63, true, cast('{"lastSeen": "2024-10-16"}' as blob))
     """)
     
-    let sql = "select * from person where height > ?"
+    let sql = "select * from person where height > ? order by name"
     
     // Prepare, execute and then iterate over the results of a one-off statement:
 
     for row in try db.execute(sql, 1.65) {
-        //...
+        #expect(["Noa", "Mia"].contains(row["name"]))
     }
     
     // Note that any errors that occur while fetching further records after the first one
@@ -43,8 +43,18 @@ import Testing
     
     let statement = try db.execute(sql, 1.65)
     while let row = try statement.nextRow() {
-        //...
+        #expect(["Noa", "Mia"].contains(row["name"]))
     }
+    
+    // The most convenient way to ensure that all errors are thrown is to load all rows
+    // into an array. This is of course not ideal if the query returns a large number of rows:
+    
+    let allRows = try db.execute(sql, 1.65).all()
+    #expect(allRows.count == 2)
+    
+    // Require that exactly one row is returned or else raise an exception:
+    
+    #expect (try db.execute("select 1 + 1").one()[0] == 2)
 
     // This is how you execute a statement repeatedly with different parameters:
     
@@ -52,7 +62,7 @@ import Testing
     for height in [1.50, 1.60, 1.70] {
         try prepared.execute(height)
         while let row = try prepared.nextRow() {
-            //...
+            #expect(row["height"]! > height)
         }
     }
     
@@ -66,20 +76,9 @@ import Testing
     """,
     ["$id": 4, "$name": "Xan", "$height": 1.78])
         
-    // Similarly, values can be retrieved from rows by position or by name:
-    
-    for row in try db.execute("select * from person") {
-        let id: Int64 = row[0]!
-        let name: String = row["name"]!
-        let height: Double = row["height"]!
-        let isFriend: Bool = row["is_friend"]!
-        
-        if let note: Data = row["note"] {
-            let jsonObject = try JSONSerialization.jsonObject(with: note)
-        }
-    }
-    
-    // The subscript operator [] will try to convert the returned value to the requested type,
+    // Similarly, values can be retrieved from rows by position or by name.
+    // Column values are accessed using the subscript operator [].
+    // The operator will try to convert the returned value to the requested type,
     // i.e. the type that is implied by the context. If the context is ambiguous,
     // use a type cast for disambiguation. E.g. let h = row["height"]! as Double
     //
@@ -105,5 +104,40 @@ import Testing
     // If you want to be absolutely certain whether or not a column is NULL,
     // you should use the correct native type that doesn't require conversion or use row.isNull()
     //
-    
+
+    for row in try db.execute("select * from person") {
+        let id: Int64 = row[0]!
+        let idStr = row[0]! as String
+        #expect(id == Int64(idStr))
+        
+        let name: String = row["name"]!
+        let nameData = row["name"]! as Data
+        #expect(name == String(data: nameData, encoding: .utf8))
+        
+        let heightInt = row["height"] as Int?
+        // because none of our example heights is exactly representable as Int:
+        #expect(heightInt == nil)
+        
+        let isFriend: Bool = row["is_friend"]!
+        #expect(["Ada", "Noa"].contains(row["name"]) ? isFriend : !isFriend)
+        
+        if let note: Data = row["note"] {
+            if let dict = try JSONSerialization.jsonObject(with: note) as? [String: Any?] {
+                #expect(dict["lastSeen"] != nil)
+            } else {
+                throw Unexpected("Expected a Dictionary<String, Any>")
+            }
+            
+            #expect((row["note"]! as String).hasPrefix(#"{"lastSeen":"#))
+        }
+    }
 }
+
+struct Unexpected: Error {
+    let message: String
+    
+    init(_ message: String) {
+        self.message = message
+    }
+}
+

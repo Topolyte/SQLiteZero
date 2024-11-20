@@ -201,6 +201,22 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         try step()
         return row
     }
+    
+    public func all() throws -> [SQLiteRow] {
+        let result = Array(self)
+        try throwErrorIfAny()
+        return result
+    }
+    
+    public func one() throws -> SQLiteRow {
+        guard let row = try nextRow() else {
+            throw SQLiteError(code: SQLITE_ERROR, message: "Query returned no rows")
+        }
+        guard !hasRow else {
+            throw SQLiteError(code: SQLITE_ERROR, message: "Query returned more than one row")
+        }
+        return row
+    }
             
     public func makeIterator() -> SQLiteStatement {
         return self
@@ -226,6 +242,12 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
     
     public var handle: OpaquePointer? {
         return stmt
+    }
+    
+    public func throwErrorIfAny() throws {
+        if let error = self.error {
+            throw error
+        }
     }
         
     func bind(_ args: [Any?]) throws {
