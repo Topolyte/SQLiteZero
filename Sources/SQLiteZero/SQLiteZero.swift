@@ -159,6 +159,7 @@ let SQLITE_TRANSIENT: sqlite3_destructor_type = unsafeBitCast(-1, to: sqlite3_de
 public class SQLiteStatement: Sequence, IteratorProtocol {
     public let sql: String
     public var changes: Int64 = 0
+    public var error: Error? = nil
     public var hasRow = false
     public var colNames: [String] = []
 
@@ -184,49 +185,37 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
             throw SQLiteError(code: rc, message: message)
         }
     }
-    
+
     public func execute(_ args: Any?...) throws {
-        return try execute(SQLiteArgs(args))
+        try execute(SQLiteArgs(args))
     }
         
     public func nextRow() throws -> SQLiteRow? {
         guard hasRow else {
             return nil
         }
+        guard self.error == nil else {
+            throw self.error!
+        }
         let row = readRow()
         try step()
         return row
     }
-    
-    public func one() throws -> SQLiteRow {
-        guard let row = try nextRow() else {
-            throw SQLiteError(code: Int32(SQLITE_ERROR), message: "No rows returned")
-        }
-        guard try nextRow() == nil else {
-            throw SQLiteError(code: Int32(SQLITE_ERROR), message: "More than one row returned")
-        }
-        return row
-    }
-    
-    public func all() throws -> [SQLiteRow] {
-        var res = [SQLiteRow]()
-        while let row = try nextRow() {
-            res.append(row)
-        }
-        return res
-    }
-    
+            
     public func makeIterator() -> SQLiteStatement {
         return self
     }
     
-    public func next() -> Result<SQLiteRow, Error>? {
+    public func next() -> SQLiteRow? {
+        guard self.error == nil else {
+            return nil
+        }
         do {
             if let row = try nextRow() {
-                return .success(row)
+                return row
             }
         } catch {
-            return .failure(error)
+            self.error = error
         }
         return nil
     }
@@ -270,7 +259,8 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
             }
             
             if rc != SQLITE_OK {
-                throw SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+                self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+                throw self.error!
             }
         }
     }
@@ -292,7 +282,9 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
                 index = sqlite3_bind_parameter_index(stmt, "@" + k) - 1
             }
             if index == -1 {
-                throw SQLiteError(code: SQLITE_ERROR, message: "Invalid bind parameter name: \(k)")
+                self.error = SQLiteError(
+                    code: SQLITE_ERROR, message: "Invalid bind parameter name: \(k)")
+                throw self.error!
             }
             posArgs[Int(index)] = v
         }
@@ -303,7 +295,8 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
     func execute(_ params: SQLiteArgs) throws {
         let rc = sqlite3_reset(stmt)
         if rc != SQLITE_OK {
-            throw SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+            self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+            throw self.error!
         }
         
         switch params {
@@ -318,6 +311,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
 
     func execute() throws {
         self.changes = 0
+        self.error = nil
         self.hasRow = false
         self.colNames = []
 
@@ -361,6 +355,9 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
     }
 
     func step() throws {
+        guard self.error == nil else {
+            throw self.error!
+        }
         let rc = sqlite3_step(stmt)
         if rc == SQLITE_DONE {
             self.hasRow = false
@@ -369,7 +366,8 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         if rc == SQLITE_ROW {
             self.hasRow = true
         } else {
-            throw SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+            self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+            throw self.error!
         }
     }
     
@@ -426,16 +424,10 @@ public class SQLite {
         
         busyTimeout(seconds: SQLite.defaultBusyTimeout)
     }
-    
-    @discardableResult
-    public func execute(_ sql: String) throws -> SQLiteStatement {
-        return try execute(sql, SQLiteArgs.none)
-    }
-    
+
     @discardableResult
     public func execute(_ sql: String, _ args: Any?...) throws -> SQLiteStatement {
-        let sargs = SQLiteArgs(args)
-        return try execute(sql, sargs)
+        return try execute(sql, SQLiteArgs(args))
     }
 
     @discardableResult

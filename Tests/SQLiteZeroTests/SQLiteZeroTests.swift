@@ -88,7 +88,7 @@ import Testing
     
     #expect(!select.hasRow)
     #expect(select.colNames == ["id", "name", "balance"])
-    #expect(try select.all().isEmpty)
+    #expect(try Array(select).isEmpty)
 }
 
 @Test func bindings() async throws {
@@ -156,19 +156,6 @@ import Testing
     
 }
 
-@Test func first() async throws {
-    let db = try SQLite()
-    
-    let noRows = try db.execute("select 1 where 1 = 2")
-    #expect(throws: SQLiteError.self) {
-        _ = try noRows.one()
-    }
-
-    let oneRow = try db.execute("select 1, 'noa'")
-    let row = try oneRow.one()
-    #expect(row == SQLiteRow([.integer(1), .text("noa")]))
-}
-
 @Test func multipleStatements() async throws {
     let db = try SQLite()
     let last = try db.execute(
@@ -185,7 +172,7 @@ import Testing
         select id, name from t where id = :id;
     """, [":id": 1])
     
-    #expect(try last.one()["name"] == "xan")
+    #expect(try last.nextRow()!["name"] == "xan")
 }
 
 @Test func statementReuse() async throws {
@@ -203,7 +190,7 @@ import Testing
     }
     
     #expect(try db.execute(
-        "select count(*) as count from t where member = true").one()["count"] == N-1)
+        "select count(*) as count from t where member = true").nextRow()!["count"] == N-1)
 }
 
 @Test func rollback() async throws {
@@ -220,13 +207,13 @@ import Testing
     #expect(throws: SQLiteError.self) {
         try db.transaction {
             try db.execute("insert into t values (2, 'two')")
-            count = try db.execute("select count(*) from t").one()[0]!
+            count = try db.execute("select count(*) from t").nextRow()![0]!
             throw SQLiteError(code: 1, message: "testing")
         }
     }
     
     #expect(count == 2)
-    #expect(try db.execute("select count(*) from t").one()[0]! == 1)
+    #expect(try db.execute("select count(*) from t").nextRow()![0]! == 1)
 }
 
 @Test func commit() async throws {
@@ -242,7 +229,7 @@ import Testing
         try db.execute("insert into t values (2, 'two')")
     }
 
-    let count: Int = try db.execute("select count(*) from t").one()[0]!
+    let count: Int = try db.execute("select count(*) from t").nextRow()![0]!
     #expect(count == 2)
 }
 
@@ -262,18 +249,18 @@ import Testing
         do {
             try db.transaction {
                 try db.execute("insert into t values (3, 'three')")
-                count = try db.execute("select count(*) from t").one()[0]!
+                count = try db.execute("select count(*) from t").nextRow()![0]!
                 #expect(count == 3)
                 throw SQLiteError(code: 1, message: "testing")
             }
         } catch {
-            count = try db.execute("select count(*) from t").one()[0]!
+            count = try db.execute("select count(*) from t").nextRow()![0]!
             #expect(count == 2)
         }
         
         try db.transaction {
             try db.execute("insert into t values (3, 'three')")
-            count = try db.execute("select count(*) from t").one()[0]!
+            count = try db.execute("select count(*) from t").nextRow()![0]!
         }
         #expect(count == 3)
     }

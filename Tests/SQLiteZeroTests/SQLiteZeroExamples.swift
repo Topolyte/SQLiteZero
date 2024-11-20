@@ -27,52 +27,56 @@ import Testing
     
     let sql = "select * from person where height > ?"
     
-    // If you expect the query to return a small number of records,
-    // you can load them all into an array and loop over them:
+    // Prepare, execute and then iterate over the results of a one-off statement:
 
-    let rows = try db.execute(sql, 1.65).all()
+    for row in try db.execute(sql, 1.65) {
+        //...
+    }
+    
+    // Note that any errors that occur while fetching further records after the first one
+    // are not thrown because Swift's IteratorProtocol is non-throwing.
+    // This is relatively rare because most erorrs occur when the statement is prepared
+    // or when arguments are bound to host variables. But it can happen e.g. if the
+    // database is locked by another process or if concurrent schema changes are made.
+    // If this is a possibility in your code, you can use a slightly more convoluted way of
+    // iterating over query results:
+    
+    let statement = try db.execute(sql, 1.65)
+    while let row = try statement.nextRow() {
+        //...
+    }
 
-    // If you expect a large number of records and don't want to load them all into memory
-    // you can use for-in to loop over the statement returned by execute.
-    // Unfortunately there is throwin version of Swift's IteratorProtocol,
-    // which is why the for-in loop looks slightly convoluted:
-
-    for result in try db.execute(sql, 1.65) {
-        switch result {
-        case .success(let row):
-            print(row)
-        case .failure(let error):
-            throw error
+    // This is how you execute a statement repeatedly with different parameters:
+    
+    let prepared = try db.prepare(sql)
+    for height in [1.50, 1.60, 1.70] {
+        try prepared.execute(height)
+        while let row = try prepared.nextRow() {
+            //...
         }
     }
     
-    // Alternatively, you can use the throwing nextRow() function to iterate over rows:
-
-    let stmt = try db.execute(sql, 1.65)
-    while let row = try stmt.nextRow() {
-        //...
-    }
+    // Parameters can be provided by name or by position.
+    // Using the name prefix character in your dictionary is optional
+    // but recommended because it's slightly faster.
     
-    // If you expect the query to return exactly one row you can call one().
-    // If the query returns no rows or more than one row, an exception will be thrown:
-
-    let row = try db.execute(sql, 1.70).one()
+    try db.execute("""
+        insert into person(id, name, height) values
+        ($id, $name, $height)
+    """,
+    ["$id": 4, "$name": "Xan", "$height": 1.78])
+        
+    // Similarly, values can be retrieved from rows by position or by name:
     
-    // If your query may or may not return a row but you only need the first one, use next():
-    
-    if let row = try db.execute(sql, 1.65).nextRow() {
-        //...
-    }
-    
-    // Values can be retrieved from rows by position or by name:
-    
-    let id: Int64 = row[0]!
-    let name: String = row["name"]!
-    let height: Double = row["height"]!
-    let isFriend: Bool = row["is_friend"]!
-    
-    if let note: Data = row["note"] {
-        let jsonObject = try JSONSerialization.jsonObject(with: note)
+    for row in try db.execute("select * from person") {
+        let id: Int64 = row[0]!
+        let name: String = row["name"]!
+        let height: Double = row["height"]!
+        let isFriend: Bool = row["is_friend"]!
+        
+        if let note: Data = row["note"] {
+            let jsonObject = try JSONSerialization.jsonObject(with: note)
+        }
     }
     
     // The subscript operator [] will try to convert the returned value to the requested type,
