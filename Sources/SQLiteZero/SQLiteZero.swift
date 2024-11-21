@@ -27,11 +27,32 @@ public struct SQLiteError: Error, CustomStringConvertible {
     public let message: String
     
     public var description: String {
-        return "[\(code)] \(message)"
+        return "\(code): \(message)"
     }
     
     public var isBusy: Bool {
         return code == SQLITE_BUSY
+    }
+    
+    public static func from(_ db: OpaquePointer?,_ rc: Int32? = nil) -> SQLiteError {
+        guard let db = db else {
+            guard let rc = rc else {
+                return SQLiteError(code: -1, message: "Unknown error")
+            }
+            let cMessage = sqlite3_errstr(rc)
+            guard let cMessage = cMessage else {
+                return SQLiteError(code: rc, message: "Error \(rc)")
+            }
+            return SQLiteError(code: rc, message: String(cString: cMessage))
+        }
+
+        var code: Int32 = rc ?? sqlite3_errcode(db)
+        let cMessage = sqlite3_errmsg(db) ?? sqlite3_errstr(code)
+        
+        if let cMessage = cMessage {
+            return SQLiteError(code: code, message: String(cString: cMessage))
+        }
+        return SQLiteError(code: code, message: "Error \(code)")
     }
 }
 
@@ -181,8 +202,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         
         let rc = sqlite3_prepare_v2(db.db, sql, -1, &stmt, nil)
         if rc != SQLITE_OK {
-            let message = errorMessage(db.db, rc)
-            throw SQLiteError(code: rc, message: message)
+            throw SQLiteError.from(db.db, rc)
         }
     }
 
@@ -282,7 +302,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
             }
             
             if rc != SQLITE_OK {
-                self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+                self.error = SQLiteError.from(db?.db, rc)
                 throw self.error!
             }
         }
@@ -318,7 +338,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
     func execute(_ params: SQLiteArgs) throws -> Self {
         let rc = sqlite3_reset(stmt)
         if rc != SQLITE_OK {
-            self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+            self.error = SQLiteError.from(db?.db, rc)
             throw self.error!
         }
         
@@ -390,7 +410,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         if rc == SQLITE_ROW {
             self.hasRow = true
         } else {
-            self.error = SQLiteError(code: rc, message: errorMessage(db?.db, rc))
+            self.error = SQLiteError.from(db?.db, rc)
             throw self.error!
         }
     }
@@ -431,6 +451,7 @@ public class SQLite {
     public static let defaultBusyTimeout = TimeInterval(1.0)
     
     var db: OpaquePointer! = nil
+    let path: String
     let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "", category: "General")
     
     public convenience init() throws {
@@ -438,12 +459,13 @@ public class SQLite {
     }
     
     public init(_ path: String, flags: SqliteOpenOptions = [.readWrite, .create]) throws {
+        self.path = path
         let rc = sqlite3_open_v2(path, &db, flags.rawValue, nil)
         
         if rc != SQLITE_OK {
-            let message = errorMessage(db, rc)
+            let err = SQLiteError.from(db, rc)
             _ = sqlite3_close(db)
-            throw SQLiteError(code: rc, message: message)
+            throw err
         }
         
         busyTimeout(seconds: SQLite.defaultBusyTimeout)
@@ -457,8 +479,7 @@ public class SQLite {
     @discardableResult
     func execute(_ sql: String, _ args: SQLiteArgs) throws -> SQLiteStatement {
         let stmt = try prepare(sql)
-        try stmt.execute(args)
-        return stmt
+        return try stmt.execute(args)
     }
     
     @discardableResult
@@ -514,9 +535,9 @@ public class SQLite {
             while true {
                 let rc = sqlite3_prepare_v2(db, pCurrent, -1, &pStmt, &pNext)
                 if rc != SQLITE_OK {
-                    let message = errorMessage(db, rc)
+                    let err = SQLiteError.from(db, rc)
                     sqlite3_finalize(pStmt)
-                    throw SQLiteError(code: rc, message: message)
+                    throw err
                 }
                 
                 if pNext == nil || pNext![0] == 0 {
@@ -525,9 +546,9 @@ public class SQLite {
                 } else {
                     let rc = sqlite3_step(pStmt)
                     if rc != SQLITE_DONE && rc != SQLITE_ROW {
-                        let message = errorMessage(db, rc)
+                        let err = SQLiteError.from(db, rc)
                         sqlite3_finalize(pStmt)
-                        throw SQLiteError(code: rc, message: message)
+                        throw err
                     }
                     
                     pCurrent = pNext
@@ -545,10 +566,48 @@ public class SQLite {
         return stmt
     }
     
+    public func backup(to destination: SQLite, progress: ((Int, Int, Int) -> Bool)? = nil) throws {
+        let backup = sqlite3_backup_init(destination.handle, "main", self.handle, "main")
+        guard let backup = backup else {
+            throw SQLiteError.from(destination.db)
+        }
+
+        var retryCount = 0
+        
+        repeat {
+            let remaining = sqlite3_backup_remaining(backup)
+            let total = sqlite3_backup_pagecount(backup)
+            if let progress = progress {
+                if !progress(Int(remaining), Int(total), retryCount) {
+                    break
+                }
+            }
+            
+            let rc = sqlite3_backup_step(backup, 1024)
+            if rc == SQLITE_DONE {
+                break
+            } else if rc == SQLITE_LOCKED || rc == SQLITE_BUSY {
+                retryCount += 1
+            } else if rc == SQLITE_OK {
+                retryCount = 0
+            } else {
+                let err = SQLiteError.from(destination.db, rc)
+                sqlite3_backup_finish(backup)
+                throw err
+            }
+        } while true
+                    
+        sqlite3_backup_finish(backup)
+    }
+    
     public var isOpen: Bool {
         return self.db != nil
     }
     
+    public var errorCode: Int32 {
+        return sqlite3_errcode(db)
+    }
+        
     public var handle: OpaquePointer? {
         return db
     }
@@ -558,25 +617,10 @@ public class SQLite {
         if rc == SQLITE_OK {
             return
         }
-        if rc != SQLITE_BUSY {
+        if rc == SQLITE_BUSY {
             log.error("Failed to close database because there are unclosed statements")
         } else {
-            log.error("Failed to close database: \(errorMessage(self.db, rc))")
+            log.error("Failed to close database: \(SQLiteError.from(self.db, rc))")
         }
     }
-    
-}
-
-func errorMessage(_ db: OpaquePointer?,_ rc: Int32) -> String {
-    guard let db = db else {
-        let cMessage = sqlite3_errstr(rc)
-        let message = cMessage != nil ? String(cString: cMessage!) : "\(rc) - Unknown error"
-        return message
-    }
-    
-    var cMessage = sqlite3_errmsg(db)
-    if cMessage == nil {
-        cMessage = sqlite3_errstr(rc)
-    }
-    return cMessage != nil ? String(cString: cMessage!) : "\(rc) - Unknown error"
 }
