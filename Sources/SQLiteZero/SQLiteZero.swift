@@ -575,15 +575,10 @@ public class SQLite {
         var retryCount = 0
         
         repeat {
+            let rc = sqlite3_backup_step(backup, 1024)
             let remaining = sqlite3_backup_remaining(backup)
             let total = sqlite3_backup_pagecount(backup)
-            if let progress = progress {
-                if !progress(Int(remaining), Int(total), retryCount) {
-                    break
-                }
-            }
-            
-            let rc = sqlite3_backup_step(backup, 1024)
+
             if rc == SQLITE_DONE {
                 break
             } else if rc == SQLITE_LOCKED || rc == SQLITE_BUSY {
@@ -594,6 +589,12 @@ public class SQLite {
                 let err = SQLiteError.from(destination.db, rc)
                 sqlite3_backup_finish(backup)
                 throw err
+            }
+            
+            if let progress = progress {
+                if !progress(Int(remaining), Int(total), retryCount) {
+                    break
+                }
             }
         } while true
                     

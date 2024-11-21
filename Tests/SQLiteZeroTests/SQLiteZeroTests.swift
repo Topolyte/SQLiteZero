@@ -287,6 +287,40 @@ import Testing
     }
 }
 
+@Test func backup() async throws {
+    let source = try SQLite()
+    try createTestTable1(source)
+    try source.execute("""
+        create table backup_test (
+            id integer primary key,
+            data text
+        );
+    
+        with recursive r(id, data) as (
+            select 1, hex(randomblob(512))
+            union all
+            select id + 1, hex(randomblob(512))
+            from r
+        )
+        insert into backup_test(id, data)
+        select id, data
+        from r
+        limit 10000
+    """)
+    
+    let destPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("backup.db")
+        .path(percentEncoded: false)
+    let dest = try SQLite(destPath)
+    
+    try source.backup(to: dest) { remaining, total, retries in
+        #expect(retries == 0)
+        return true
+    }
+    
+    #expect(try dest.execute("select count(*) from backup_test").one()[0] == 10_000)
+}
+
 func createTestTable1(_ db: SQLite) throws {
     let _ = try db.execute(
     """
