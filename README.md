@@ -74,7 +74,7 @@ import SQLiteZero
     
     // Note that any errors that occur while fetching further records after the first one
     // are not thrown when using for-in because Swift's IteratorProtocol is non-throwing.
-    // This is relatively rare because most erorrs occur when the statement is prepared
+    // This is relatively rare because most errors occur when the statement is prepared
     // or when any arguments are bound to host variables. But it can happen e.g. if the
     // database is locked by another process or if concurrent schema changes are made.
     // If this is a possibility in your code, you can use a slightly more convoluted way of
