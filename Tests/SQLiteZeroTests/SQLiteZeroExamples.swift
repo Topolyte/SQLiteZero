@@ -9,7 +9,7 @@ import Testing
     //Open or create a database at path with the default options
     let db = try SQLite(path)
 
-    //Execute one or more statements
+    //Use executeScript to execute more than one statement. Scripts don't take any arguments.
     try db.executeScript("""
         create table person (
             id integer primary key,
@@ -34,9 +34,9 @@ import Testing
     }
     
     // Note that any errors that occur while fetching further records after the first one
-    // are not thrown because Swift's IteratorProtocol is non-throwing.
+    // are not thrown when using for-in because Swift's IteratorProtocol is non-throwing.
     // This is relatively rare because most erorrs occur when the statement is prepared
-    // or when arguments are bound to host variables. But it can happen e.g. if the
+    // or when any arguments are bound to host variables. But it can happen e.g. if the
     // database is locked by another process or if concurrent schema changes are made.
     // If this is a possibility in your code, you can use a slightly more convoluted way of
     // iterating over query results:
