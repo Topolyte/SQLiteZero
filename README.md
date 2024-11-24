@@ -181,8 +181,9 @@ import SQLiteZero
         }
     }
     
-    // A transaction is committed when the closure passed to the transaction() method completes
-    // without throwing an exception. If an exception occurs, the transaction is rolled back.
+    // A transaction is committed when the closure passed to the transaction()
+    // method completes without throwing an exception.
+    // If an exception occurs, the transaction is rolled back.
     // Transactions can be nested. The inner transactions use savepoints and are
     // therefore not durable unless the outermost transaction is committed as well:
     
@@ -207,14 +208,15 @@ import SQLiteZero
     
     // To make a backup open the source and destination databases and make sure
     // that there is no other connection to the destination database.
-    // Then call the backup() method on the source database passing the destination database
-    // as a parameter.
+    // Then call the backup() method on the source database passing the
+    // destination database as a parameter.
     //
-    // The second parameter to backup() is an optional callback function that is called
-    // once every SQLite.backupBatchSize pages to indicate progress or if retries were necessary
+    // The second parameter to backup() is an optional callback function
+    // that is called once every SQLite.backupBatchSize pages
+    // to indicate progress or if retries were necessary
     // because either the source or destination database is temporarily locked.
-    // The callback function receives the number of bytes remaining, the total number of bytes
-    // in the source database and the number of retries.
+    // The callback function receives the number of bytes remaining,
+    // the total number of bytes in the source database and the number of retries.
     //
     // If the callback function returns false, the backup is aborted.
     
