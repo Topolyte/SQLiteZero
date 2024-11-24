@@ -479,19 +479,21 @@ public class SQLite {
     }
     
     public func executeScript(_ sql: String) throws {
-        var thisSQL: String = sql
-        var (nextStmt, restSQL) = try prepareScript(thisSQL)
-        
-        while true {
-            guard let stmt = nextStmt else {
-                break
+        try sql.withCString {
+            var pThisSQL = $0
+            var (nextStmt, pRestSQL) = try prepareInternal(pThisSQL)
+            
+            while true {
+                guard let stmt = nextStmt else {
+                    break
+                }
+                try stmt.execute()
+                guard let pNextSQL = pRestSQL else {
+                    break
+                }
+                pThisSQL = pNextSQL
+                (nextStmt, pRestSQL) = try prepareInternal(pThisSQL)
             }
-            try stmt.execute()
-            guard let nextSQL = restSQL else {
-                break
-            }
-            thisSQL = nextSQL
-            (nextStmt, restSQL) = try prepareScript(thisSQL)
         }
     }
 
@@ -545,51 +547,50 @@ public class SQLite {
     }
 
     public func prepare(_ sql: String) throws -> SQLiteStatement {
-        let (stmt, _) = try prepareScript(sql)
-        guard let stmt = stmt else {
-            throw SQLiteError(code: SQLITE_ERROR, message: "Empty or invalid SQL")
+        return try sql.withCString {
+            let (stmt, _) = try prepareInternal($0)
+            guard let stmt = stmt else {
+                throw SQLiteError(code: SQLITE_ERROR, message: "Empty or invalid SQL")
+            }
+            return stmt
         }
-        return stmt
     }
     
-    func prepareScript(_ sql: String) throws -> (SQLiteStatement?, String?) {
-        return try sql.withCString {
-            let cSQLStart: UnsafePointer<CChar> = $0
-            var cSQLNext: UnsafePointer<CChar>! = nil
-            var cStmt: OpaquePointer! = nil
-            
-            let rc = sqlite3_prepare_v2(db, cSQLStart, -1, &cStmt, &cSQLNext)
-            if rc != SQLITE_OK {
-                sqlite3_finalize(cStmt)
-                throw SQLiteError.from(db, rc)
-            }
-
-            guard let cStmt = cStmt else {
-                return (nil, nil)
-            }
-
-            if cSQLNext == nil || cSQLNext![0] == 0 {
-                return try (
-                    SQLiteStatement(db: self, stmt: cStmt, sql: String(cString: cSQLStart)),
-                    nil)
-            }
-            
-            let bytes = UnsafeBufferPointer(
-                start: cSQLStart,
-                count: Int(cSQLNext! - cSQLStart))
-            
-            let thisSQL = bytes.withMemoryRebound(to: UInt8.self) { p in
-                return String(bytes: p, encoding: .utf8)
-            }
-            
-            guard let thisSQL = thisSQL else {
-                throw SQLiteError(code: SQLITE_ERROR, message: "SQL statement contains invalid UTF-8")
-            }
-            
-            let restSQL = String(cString: cSQLNext)
-                            
-            return try (SQLiteStatement(db: self, stmt: cStmt, sql: thisSQL), restSQL)
+    func prepareInternal(_ pSQL: UnsafePointer<CChar>) throws
+        -> (SQLiteStatement?, UnsafePointer<CChar>?)
+    {
+        var pSQLNext: UnsafePointer<CChar>! = nil
+        var pStmt: OpaquePointer! = nil
+        
+        let rc = sqlite3_prepare_v2(db, pSQL, -1, &pStmt, &pSQLNext)
+        if rc != SQLITE_OK {
+            sqlite3_finalize(pStmt)
+            throw SQLiteError.from(db, rc)
         }
+
+        guard let pStmt = pStmt else {
+            return (nil, nil)
+        }
+
+        if pSQLNext == nil || pSQLNext![0] == 0 {
+            return try (
+                SQLiteStatement(db: self, stmt: pStmt, sql: String(cString: pSQL)),
+                nil)
+        }
+        
+        let bytes = UnsafeBufferPointer(
+            start: pSQL,
+            count: Int(pSQLNext! - pSQL))
+        
+        let thisSQL = bytes.withMemoryRebound(to: UInt8.self) { p in
+            return String(bytes: p, encoding: .utf8)
+        }
+        
+        guard let thisSQL = thisSQL else {
+            throw SQLiteError(code: SQLITE_ERROR, message: "SQL statement contains invalid UTF-8")
+        }
+                        
+        return try (SQLiteStatement(db: self, stmt: pStmt, sql: thisSQL), pSQLNext)
     }
     
     public var pageSize: Int {

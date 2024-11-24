@@ -109,7 +109,7 @@ import Testing
     
     #expect(!select.hasRow)
     #expect(select.colNames == ["id", "name", "balance"])
-    #expect(try Array(select).isEmpty)
+    #expect(Array(select).isEmpty)
 }
 
 @Test func bindings() throws {
