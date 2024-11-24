@@ -2,12 +2,12 @@ import Foundation
 import Testing
 @testable import SQLiteZero
 
-@Test func open() async throws {
+@Test func open() throws {
     let db = try SQLite(":memory:")
     #expect(db.isOpen)
 }
 
-@Test func select() async throws {
+@Test func select() throws {
     let db = try SQLite()
     let stmt = try db.execute("SELECT 1 as i, 1.1 as d, 'one' as s, X'CAFEBABE' as h, null as u")
     #expect(stmt.hasRow)
@@ -34,7 +34,7 @@ import Testing
     #expect(!stmt.hasRow)
 }
 
-@Test func one() async throws {
+@Test func one() throws {
     let db = try SQLite()
     var stmt = try db.execute("select 1")
     _ = try stmt.one()
@@ -47,7 +47,7 @@ import Testing
     #expect(throws: SQLiteError.self) { try stmt.one() }
 }
 
-@Test func all() async throws {
+@Test func all() throws {
     let db = try SQLite()
     let rows = try db.execute("select * from (values (1), (2), (3))").all()
     let values = rows.map { $0[0]! as Int64 }
@@ -55,7 +55,7 @@ import Testing
     #expect(values == expected)
 }
 
-@Test func selectDict() async throws {
+@Test func selectDict() throws {
     let db = try SQLite()
     let stmt = try db.execute("SELECT 1 as i, 1.1 as d, 'one' as s, X'CAFEBABE' as h, null as u")
     let row = try stmt.nextRow()
@@ -74,7 +74,7 @@ import Testing
     #expect(row["notfound"] == nil)
 }
 
-@Test func selectMultiple() async throws {
+@Test func selectMultiple() throws {
     let db = try SQLite()
     try createTestTable1(db)
     
@@ -96,7 +96,7 @@ import Testing
     #expect(count == 3)
 }
 
-@Test func emptyResult() async throws {
+@Test func emptyResult() throws {
     let db = try SQLite()
     try createTestTable1(db)
     
@@ -112,7 +112,7 @@ import Testing
     #expect(try Array(select).isEmpty)
 }
 
-@Test func bindings() async throws {
+@Test func bindings() throws {
     let db = try SQLite()
     try createTestTable1(db)
     
@@ -127,7 +127,7 @@ import Testing
     #expect(try select.nextRow()?["id"] == 99)
 }
 
-@Test func namedBindings() async throws {
+@Test func namedBindings() throws {
     let db = try SQLite()
     try createTestTable1(db)
     
@@ -142,7 +142,7 @@ import Testing
     #expect(try select.nextRow()?["id"] == 99)
 }
 
-@Test func typeConversion() async throws {
+@Test func typeConversion() throws {
     let db = try SQLite()
     let select = try db.execute("""
         SELECT
@@ -177,26 +177,27 @@ import Testing
     
 }
 
-@Test func multipleStatements() async throws {
+@Test func script() throws {
     let db = try SQLite()
-    let last = try db.execute(
+    try db.executeScript(
     """
+        -- a comment
         create table t(
             id integer primary key,
             name text not null
         );
+
+        -- another comment
     
         insert into t(id, name) values
         (1, 'xan'),
         (2, 'mia');
     
-        select id, name from t where id = :id;
-    """, [":id": 1])
-    
-    #expect(try last.nextRow()!["name"] == "xan")
+        -- yet another comment
+    """)
 }
 
-@Test func statementReuse() async throws {
+@Test func statementReuse() throws {
     let N = 50
     let db = try SQLite()
     try createTestTable1(db)
@@ -214,10 +215,10 @@ import Testing
         "select count(*) as count from t where member = true").nextRow()!["count"] == N-1)
 }
 
-@Test func rollback() async throws {
+@Test func rollback() throws {
     let db = try SQLite()
     
-    try db.execute("""
+    try db.executeScript("""
         create table t(id integer primary key, comment text);
     
         insert into t values (1, 'initial');
@@ -237,10 +238,10 @@ import Testing
     #expect(try db.execute("select count(*) from t").nextRow()![0]! == 1)
 }
 
-@Test func commit() async throws {
+@Test func commit() throws {
     let db = try SQLite()
     
-    try db.execute("""
+    try db.executeScript("""
         create table t(id integer primary key, comment text);
     
         insert into t values (1, 'initial');
@@ -254,10 +255,10 @@ import Testing
     #expect(count == 2)
 }
 
-@Test func savepoints() async throws {
+@Test func savepoints() throws {
     let db = try SQLite()
     
-    try db.execute("""
+    try db.executeScript("""
         create table t(id integer primary key, comment text);
     
         insert into t values (1, 'initial');
@@ -287,10 +288,10 @@ import Testing
     }
 }
 
-@Test func backup() async throws {
+@Test func backup() throws {
     let source = try SQLite()
     try createTestTable1(source)
-    try source.execute("""
+    try source.executeScript("""
         create table backup_test (
             id integer primary key,
             data text
@@ -314,6 +315,7 @@ import Testing
     let dest = try SQLite(destPath)
     
     try source.backup(to: dest) { remaining, total, retries in
+        print("\(remaining), \(total), \(retries)")
         #expect(retries == 0)
         return true
     }

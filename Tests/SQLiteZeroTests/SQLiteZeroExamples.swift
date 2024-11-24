@@ -10,7 +10,7 @@ import Testing
     let db = try SQLite(path)
 
     //Execute one or more statements
-    try db.execute("""
+    try db.executeScript("""
         create table person (
             id integer primary key,
             name text not null,
@@ -155,6 +155,47 @@ import Testing
         #expect(try countName.execute("Ari").one()[0] == 0)
     }
     #expect(try countName.execute("Liv").one()[0] == 1)
+    
+    // To make a backup open the source and destination databases and make sure
+    // that there is no other connection to the destination database.
+    // Then call the backup() method on the source database passing the destination database
+    // as a parameter.
+    //
+    // The second parameter to backup() is an optional callback function that is called
+    // once every SQLite.backupBatchSize pages to indicate progress or if retries were necessary
+    // because either the source or destination database is temporarily locked.
+    // The callback function receives the number of bytes remaining, the total number of bytes
+    // in the source database and the number of retries.
+    //
+    // If the callback function returns false, the backup is aborted.
+    
+    let source = try SQLite()
+    try source.executeScript("""
+        create table backup_test (
+            id integer primary key,
+            data text
+        );
+    
+        insert into backup_test(id, data) values
+        (1, 'abc'),
+        (2, 'xyz');    
+    """)
+    
+    let destinationPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("backup.db")
+        .path(percentEncoded: false)
+    
+    let destination = try SQLite(destinationPath)
+    let maxRetries = 10
+    
+    try source.backup(to: destination) { remaining, total, retries in
+        if retries > maxRetries {
+            return false
+        }
+        return true
+    }
+    
+    #expect(try destination.execute("select count(*) from backup_test").one()[0] == 2)
 }
 
 enum Err: Error {

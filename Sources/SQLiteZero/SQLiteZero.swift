@@ -46,7 +46,7 @@ public struct SQLiteError: Error, CustomStringConvertible {
             return SQLiteError(code: rc, message: String(cString: cMessage))
         }
 
-        var code: Int32 = rc ?? sqlite3_errcode(db)
+        let code: Int32 = rc ?? sqlite3_errcode(db)
         let cMessage = sqlite3_errmsg(db) ?? sqlite3_errstr(code)
         
         if let cMessage = cMessage {
@@ -335,6 +335,7 @@ public class SQLiteStatement: Sequence, IteratorProtocol {
         try bind(posArgs)
     }
     
+    @discardableResult
     func execute(_ params: SQLiteArgs) throws -> Self {
         let rc = sqlite3_reset(stmt)
         if rc != SQLITE_OK {
@@ -449,6 +450,7 @@ public enum SQLiteTransactionType: String {
 
 public class SQLite {
     public static let defaultBusyTimeout = TimeInterval(1.0)
+    public static let backupBatchSize: Int32 = 1024
     
     var db: OpaquePointer! = nil
     let path: String
@@ -475,13 +477,31 @@ public class SQLite {
     public func execute(_ sql: String, _ args: Any?...) throws -> SQLiteStatement {
         return try execute(sql, SQLiteArgs(args))
     }
+    
+    public func executeScript(_ sql: String) throws {
+        var thisSQL: String = sql
+        var (nextStmt, restSQL) = try prepareScript(thisSQL)
+        
+        while true {
+            guard let stmt = nextStmt else {
+                break
+            }
+            try stmt.execute()
+            guard let nextSQL = restSQL else {
+                break
+            }
+            thisSQL = nextSQL
+            (nextStmt, restSQL) = try prepareScript(thisSQL)
+        }
+    }
 
     @discardableResult
     func execute(_ sql: String, _ args: SQLiteArgs) throws -> SQLiteStatement {
         let stmt = try prepare(sql)
-        return try stmt.execute(args)
+        try stmt.execute(args)
+        return stmt
     }
-    
+        
     @discardableResult
     public func transaction<T>(
         _ txType: SQLiteTransactionType = .deferred, _ f: () throws -> T) throws -> T
@@ -525,45 +545,57 @@ public class SQLite {
     }
 
     public func prepare(_ sql: String) throws -> SQLiteStatement {
-        var stmt: SQLiteStatement? = nil
-        
-        try sql.withCString {
-            var pStmt: OpaquePointer! = nil
-            var pCurrent: UnsafePointer<CChar>? = $0
-            var pNext: UnsafePointer<CChar>? = nil
-            
-            while true {
-                let rc = sqlite3_prepare_v2(db, pCurrent, -1, &pStmt, &pNext)
-                if rc != SQLITE_OK {
-                    let err = SQLiteError.from(db, rc)
-                    sqlite3_finalize(pStmt)
-                    throw err
-                }
-                
-                if pNext == nil || pNext![0] == 0 {
-                    stmt = try SQLiteStatement(db: self, stmt: pStmt, sql: String(cString: pCurrent!))
-                    break
-                } else {
-                    let rc = sqlite3_step(pStmt)
-                    if rc != SQLITE_DONE && rc != SQLITE_ROW {
-                        let err = SQLiteError.from(db, rc)
-                        sqlite3_finalize(pStmt)
-                        throw err
-                    }
-                    
-                    pCurrent = pNext
-                    pNext = nil
-                    sqlite3_finalize(pStmt)
-                    pStmt = nil
-                }
-            }
-        }
-        
+        let (stmt, _) = try prepareScript(sql)
         guard let stmt = stmt else {
-            throw SQLiteError(code: SQLITE_ERROR, message: "BUG: stmt == nil")
+            throw SQLiteError(code: SQLITE_ERROR, message: "Empty or invalid SQL")
         }
-        
         return stmt
+    }
+    
+    func prepareScript(_ sql: String) throws -> (SQLiteStatement?, String?) {
+        return try sql.withCString {
+            let cSQLStart: UnsafePointer<CChar> = $0
+            var cSQLNext: UnsafePointer<CChar>! = nil
+            var cStmt: OpaquePointer! = nil
+            
+            let rc = sqlite3_prepare_v2(db, cSQLStart, -1, &cStmt, &cSQLNext)
+            if rc != SQLITE_OK {
+                sqlite3_finalize(cStmt)
+                throw SQLiteError.from(db, rc)
+            }
+
+            guard let cStmt = cStmt else {
+                return (nil, nil)
+            }
+
+            if cSQLNext == nil || cSQLNext![0] == 0 {
+                return try (
+                    SQLiteStatement(db: self, stmt: cStmt, sql: String(cString: cSQLStart)),
+                    nil)
+            }
+            
+            let bytes = UnsafeBufferPointer(
+                start: cSQLStart,
+                count: Int(cSQLNext! - cSQLStart))
+            
+            let thisSQL = bytes.withMemoryRebound(to: UInt8.self) { p in
+                return String(bytes: p, encoding: .utf8)
+            }
+            
+            guard let thisSQL = thisSQL else {
+                throw SQLiteError(code: SQLITE_ERROR, message: "SQL statement contains invalid UTF-8")
+            }
+            
+            let restSQL = String(cString: cSQLNext)
+                            
+            return try (SQLiteStatement(db: self, stmt: cStmt, sql: thisSQL), restSQL)
+        }
+    }
+    
+    public var pageSize: Int {
+        get throws {
+            return try execute("pragma page_size").one()[0]!
+        }
     }
     
     public func backup(to destination: SQLite, progress: ((Int, Int, Int) -> Bool)? = nil) throws {
@@ -573,9 +605,10 @@ public class SQLite {
         }
 
         var retryCount = 0
+        let pageSize = try self.pageSize
         
         repeat {
-            let rc = sqlite3_backup_step(backup, 1024)
+            let rc = sqlite3_backup_step(backup, Self.backupBatchSize)
             let remaining = sqlite3_backup_remaining(backup)
             let total = sqlite3_backup_pagecount(backup)
 
@@ -592,7 +625,7 @@ public class SQLite {
             }
             
             if let progress = progress {
-                if !progress(Int(remaining), Int(total), retryCount) {
+                if !progress(Int(remaining) * pageSize, Int(total) * pageSize, retryCount) {
                     break
                 }
             }
