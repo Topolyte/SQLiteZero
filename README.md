@@ -85,8 +85,10 @@ import SQLiteZero
         #expect(["Noa", "Mia"].contains(row["name"]))
     }
     
-    // The most convenient way to ensure that all errors are handled is to load all rows
-    // into an array. This is of course not ideal if the query returns a large number of rows:
+    // The most convenient way to ensure that all
+    // errors are handled is to load all rows
+    // into an array. This is of course not ideal
+    // if the query returns a large number of rows:
     
     let allRows = try db.execute(sql, 1.65).all()
     #expect(allRows.count == 2)
