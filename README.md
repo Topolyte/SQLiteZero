@@ -38,6 +38,10 @@ in your Package.swift file:
 ## Usage
 
 ```
+import Foundation
+import Testing
+import SQLiteZero
+
 @Test func example() throws {
     
     let path = ":memory:" //or "/path/to/database.sqlite"
