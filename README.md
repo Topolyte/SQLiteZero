@@ -45,10 +45,13 @@ import SQLiteZero
     
     let path = ":memory:" //or "/path/to/database.sqlite"
     
-    //Open or create a database at path with the default options
+    // Open or create a database at path with the default options
+    
     let db = try SQLite(path)
 
-    //Use executeScript to execute more than one statement. Scripts don't take any arguments.
+    // Use executeScript to execute more than one statement.
+    // Scripts don't take any arguments.
+    
     try db.executeScript("""
         create table person (
             id integer primary key,
@@ -77,8 +80,8 @@ import SQLiteZero
     // This is relatively rare because most errors occur when the statement is prepared
     // or when any arguments are bound to host variables. But it can happen e.g. if the
     // database is locked by another process or if concurrent schema changes are made.
-    // If this is a possibility in your code, you can use a slightly more convoluted way of
-    // iterating over query results:
+    // If this is a possibility in your code, you can use a slightly more convoluted
+    // way of iterating over query results:
     
     let statement = try db.execute(sql, 1.65)
     while let row = try statement.nextRow() {
@@ -125,7 +128,8 @@ import SQLiteZero
     //
     // If the column is NULL or the conversion fails, nil is returned.
     // SQLite supports only five types natively: null, integer, real, text and blob.
-    // These types are mapped to the following Swift types (supported conversions in brackets)
+    // These types are mapped to the following Swift types
+    // (supported conversions in brackets)
     //
     // null : nil
     // integer : Int64 [Int, Bool, Double, String]
@@ -133,17 +137,21 @@ import SQLiteZero
     // text : String [Data, Int, Int64, Double, Bool]
     // blob : Data [String]
     //
-    // Note that conversions will fail and return nil if the value isn't exactly representable
-    // as the requested type. So converting real to Int will only work if the real value
+    // Note that conversions will fail and return nil if the value
+    // isn't exactly representable as the requested type.
+    // I.e, converting real to Int will only work if the real value
     // doesn't have any decimal places.
     //
-    // Converting blob to String only succeeds if the blob value can be decoded as UTF-8.
+    // Converting blob to String only succeeds if the blob value
+    // can be decoded as UTF-8.
     //
-    // Converting text to Bool returns true/false if the text value is "true"/"false"
-    // The comparison is case insensitive. Any other value will result in nil being returned
+    // Converting text to Bool returns true/false if the text value
+    // is "true"/"false". The comparison is case insensitive.
+    // Any other value will result in nil being returned
     //
     // If you want to be absolutely certain whether or not a column is NULL,
-    // you should use the correct native type that doesn't require conversion or use row.isNull()
+    // you should use the correct native type that doesn't require conversion
+    // or use row.isNull()
     //
 
     for row in try db.execute("select * from person") {
