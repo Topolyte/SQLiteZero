@@ -163,6 +163,13 @@ import Testing
     }
     #expect(try countName.execute("Liv").one()[0] == 1)
     
+    // To lock the database as soon as the transaction begins,
+    // use .immediate or .exclusive (check the SQLite documentation for the difference):
+    
+    try db.transaction(.immedate) {
+        //...
+    }
+    
     // To make a backup open the source and destination databases and make sure
     // that there is no other connection to the destination database.
     // Then call the backup() method on the source database passing the destination database
