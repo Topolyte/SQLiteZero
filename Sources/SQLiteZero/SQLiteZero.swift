@@ -580,7 +580,7 @@ public class SQLite {
         
         let bytes = UnsafeBufferPointer(
             start: pSQL,
-            count: Int(pSQLNext! - pSQL))
+            count: Int(pSQLNext - pSQL))
         
         let thisSQL = bytes.withMemoryRebound(to: UInt8.self) { p in
             return String(bytes: p, encoding: .utf8)

@@ -45,12 +45,14 @@ import SQLiteZero
     
     let path = ":memory:" //or "/path/to/database.sqlite"
     
-    // Open or create a database at path with the default options
+    // Open or create a database at path with the default flags:
     
     let db = try SQLite(path)
+    
+    // Alternatively pass your own flags in the second constructor parameter:
+    _ = try SQLite(path, flags: [.readOnly])
 
-    // Use executeScript to execute more than one statement.
-    // Scripts don't take any arguments.
+    // Use executeScript() to execute more than one statement.
     
     try db.executeScript("""
         create table person (
