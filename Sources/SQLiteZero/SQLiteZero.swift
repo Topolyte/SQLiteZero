@@ -65,8 +65,8 @@ public enum SQLiteValue: Equatable {
 }
 
 public struct SQLiteRow: Sequence, Equatable {
-    let values: [SQLiteValue]
-    let colNames: [String]
+    public let values: [SQLiteValue]
+    public let colNames: [String]
     
     public init(values: [SQLiteValue], colNames: [String]) {
         self.values = values
@@ -85,6 +85,17 @@ public struct SQLiteRow: Sequence, Equatable {
         default:
             return false
         }
+    }
+    
+    public func isNull(_ name: String) -> Bool {
+        guard let index = colNames.firstIndex(of: name) else {
+            return true
+        }
+        return self.isNull(index)
+    }
+    
+    public func hasColumn(_ name: String) -> Bool {
+        return colNames.firstIndex(of: name) != nil
     }
     
     public subscript<T>(_ index: Int) -> T? {
@@ -152,7 +163,6 @@ public struct SQLiteRow: Sequence, Equatable {
         case .null:
             return nil
         }
-
     }
 
     public subscript<T>(_ name: String) -> T? {
