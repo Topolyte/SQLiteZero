@@ -96,7 +96,7 @@ import SQLiteZero
     let allRows = try db.execute(sql, 1.65).all()
     #expect(allRows.count == 2)
     
-    // Require that exactly one row is returned or else raise an exception:
+    // Require exactly one row, otherwise raise an exception:
     
     #expect (try db.execute("select 1 + 1").one()[0] == 2)
 
