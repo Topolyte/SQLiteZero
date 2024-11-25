@@ -52,7 +52,9 @@ import SQLiteZero
     // Alternatively pass your own flags in the second constructor parameter:
     _ = try SQLite(path, flags: [.readOnly])
 
-    // Use executeScript() to execute more than one statement.
+    // Use executeScript() to execute multiple statements separated by ;
+    // If you pass more than one statement to the regular execute() method,
+    // only the first statement will be executed. The remaining ones are ignored.
     
     try db.executeScript("""
         create table person (
@@ -71,7 +73,7 @@ import SQLiteZero
     
     let sql = "select * from person where height > ? order by name"
     
-    // Prepare, execute and then iterate over the results of a one-off statement:
+    // Use for-in to iterate over the results of a one-off statement:
 
     for row in try db.execute(sql, 1.65) {
         #expect(["Noa", "Mia"].contains(row["name"]))
@@ -80,7 +82,7 @@ import SQLiteZero
     // Note that any errors that occur while fetching further records after the first one
     // are not thrown when using for-in because Swift's IteratorProtocol is non-throwing.
     // This is relatively rare because most errors occur when the statement is prepared
-    // or when any arguments are bound to host variables. But it can happen e.g. if the
+    // or when any arguments are bound to host variables. But it can happen, e.g. if the
     // database is locked by another process or if concurrent schema changes are made.
     // If this is a possibility in your code, you can use a slightly more convoluted
     // way of iterating over query results:
@@ -98,7 +100,8 @@ import SQLiteZero
     let allRows = try db.execute(sql, 1.65).all()
     #expect(allRows.count == 2)
     
-    // Require exactly one row, otherwise raise an exception:
+    // Request exactly one row using one().
+    // If zero or more than one row is returned, an exception is thrown.
     
     #expect (try db.execute("select 1 + 1").one()[0] == 2)
 

@@ -9,10 +9,13 @@ import Testing
     // Open or create a database at path with the default flags:
     let db = try SQLite(path)
     
-    // Alternatively pass your own flags in the second constructor parameter:
+    // Optionally pass your own flags in the second constructor parameter:
     _ = try SQLite(path, flags: [.readOnly])
     
-    //Use executeScript to execute more than one statement. Scripts don't take any arguments.
+    // Use executeScript() to execute multiple statements separated by ;
+    // If you pass more than one statement to the regular execute() method,
+    // only the first statement will be executed. The remaining ones are ignored.
+    
     try db.executeScript("""
         create table person (
             id integer primary key,
@@ -30,7 +33,7 @@ import Testing
     
     let sql = "select * from person where height > ? order by name"
     
-    // Prepare, execute and then iterate over the results of a one-off statement:
+    // Use for-in to iterate over the results of a one-off statement:
 
     for row in try db.execute(sql, 1.65) {
         #expect(["Noa", "Mia"].contains(row["name"]))
@@ -39,7 +42,7 @@ import Testing
     // Note that any errors that occur while fetching further records after the first one
     // are not thrown when using for-in because Swift's IteratorProtocol is non-throwing.
     // This is relatively rare because most erorrs occur when the statement is prepared
-    // or when any arguments are bound to host variables. But it can happen e.g. if the
+    // or when any arguments are bound to host variables. But it can happen, e.g. if the
     // database is locked by another process or if concurrent schema changes are made.
     // If this is a possibility in your code, you can use a slightly more convoluted way of
     // iterating over query results:
@@ -55,7 +58,8 @@ import Testing
     let allRows = try db.execute(sql, 1.65).all()
     #expect(allRows.count == 2)
     
-    // Require that exactly one row is returned or else raise an exception:
+    // Request exactly one row using one().
+    // If zero or more than one row is returned, an exception is thrown.
     
     #expect (try db.execute("select 1 + 1").one()[0] == 2)
 
@@ -70,7 +74,7 @@ import Testing
     }
     
     // Parameters can be provided by name or by position.
-    // Using the name prefix character in your dictionary is optional
+    // Using the name prefix character in your parameter dictionary is optional
     // but recommended because it's slightly faster.
     
     try db.execute("""
