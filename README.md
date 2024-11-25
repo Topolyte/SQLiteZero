@@ -49,7 +49,7 @@ import SQLiteZero
     
     let db = try SQLite(path)
     
-    // Alternatively pass your own flags in the second constructor parameter:
+    // Optionally pass your own flags in the second constructor parameter:
     _ = try SQLite(path, flags: [.readOnly])
 
     // Use executeScript() to execute multiple statements separated by ;
