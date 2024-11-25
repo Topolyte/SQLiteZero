@@ -455,7 +455,7 @@ enum SQLiteArgs {
 }
 
 public enum SQLiteTransactionType: String {
-    case deferred, immedate, exclusive
+    case deferred, immediate, exclusive
 }
 
 public class SQLite {

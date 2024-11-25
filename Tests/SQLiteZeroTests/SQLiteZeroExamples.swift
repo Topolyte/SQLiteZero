@@ -166,7 +166,7 @@ import Testing
     // To lock the database as soon as the transaction begins,
     // use .immediate or .exclusive (check the SQLite documentation for the difference):
     
-    try db.transaction(.immedate) {
+    try db.transaction(.immediate) {
         //...
     }
     
